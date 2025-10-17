@@ -1,0 +1,5 @@
+/* Localized versions of Info.plist keys */
+
+CFBundleName = "WireGuard配置生成器";
+CFBundleDisplayName = "WireGuard配置生成器";
+NSHumanReadableCopyright = "版权所有 mrtian2016@gmail.com 保留所有权利。";

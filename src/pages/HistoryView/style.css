@@ -1,0 +1,118 @@
+/* HistoryView 页面样式 */
+
+/* 页面头部 */
+.history-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+/* 提示文本 */
+.history-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.history-hint-empty {
+  text-align: center;
+  padding: 2rem;
+}
+
+/* 筛选区域 */
+.history-filter {
+  margin-bottom: 1rem;
+}
+
+/* 操作栏 */
+.history-actions {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.history-actions-buttons {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* 历史记录列表 */
+.history-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+/* 历史记录卡片 */
+.history-card {
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0.75rem;
+  background: white;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-card:hover {
+  background: var(--bg-light);
+  border-color: var(--primary-color);
+}
+
+.history-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.history-card-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.history-card-title {
+  font-weight: 600;
+}
+
+.history-card-id {
+  margin-left: 0.5rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.history-card-server {
+  margin-left: 0.5rem;
+  color: var(--primary-color);
+  font-size: 0.8rem;
+  background: var(--bg-light);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.history-card-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+/* 深色模式 */
+@media (prefers-color-scheme: dark) {
+  .history-card {
+    background: #1e293b;
+    border-color: var(--border-color);
+  }
+
+  .history-card:hover {
+    background: #0f172a;
+    border-color: var(--primary-color);
+  }
+
+  .history-card-server {
+    background: #0f172a;
+  }
+}

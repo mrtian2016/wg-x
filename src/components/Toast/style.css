@@ -1,0 +1,100 @@
+/* Toast 容器 */
+.wg-toast-container {
+  position: fixed;
+  top: 70px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+/* Toast 消息 */
+.wg-toast {
+  min-width: 300px;
+  max-width: 500px;
+  padding: 0;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 14px;
+  animation: wg-toast-slide-down 0.3s ease-out;
+  pointer-events: auto;
+  transition: all 0.3s ease-out;
+}
+
+/* Toast 内容容器 */
+.wg-toast-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 10px 16px;
+}
+
+/* Toast 消息文本 */
+.wg-toast-message {
+  flex: 1;
+  word-wrap: break-word;
+  line-height: 1;
+}
+
+/* Toast 关闭按钮悬停效果 */
+.wg-toast-close:hover {
+  opacity: 1;
+  background-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 成功类型 */
+.wg-toast-success {
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: white;
+}
+
+/* 错误类型 */
+.wg-toast-error {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a6f 100%);
+  color: white;
+}
+
+/* 警告类型 */
+.wg-toast-warning {
+  background: linear-gradient(135deg, #f7b733 0%, #fcb11a 100%);
+  color: white;
+}
+
+/* 信息类型 */
+.wg-toast-info {
+  background: linear-gradient(135deg, #a1c4fd 0%, #c2e9fb 100%);
+  color: #333;
+}
+
+/* 滑入动画 - 从上往下 */
+@keyframes wg-toast-slide-down {
+  from {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+/* 响应式设计 */
+@media (max-width: 600px) {
+  .wg-toast-container {
+    left: 0;
+    right: 0;
+    transform: none;
+    padding: 0 10px;
+  }
+
+  .wg-toast {
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+  }
+}

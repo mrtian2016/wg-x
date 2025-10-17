@@ -1,0 +1,351 @@
+/* 标签页导航 */
+.tabs-nav {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--border-color, #e2e8f0);
+  padding-bottom: 0;
+}
+
+.tab-button {
+  flex: 1;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  color: var(--text-muted, #64748b);
+  border: none;
+  border-bottom: 4px solid transparent;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  position: relative;
+  bottom: -2px;
+}
+
+.tab-button:hover {
+  color: var(--primary-color, #2563eb);
+  background: var(--bg-light, #f8fafc);
+  transform: none;
+  box-shadow: none;
+}
+
+.tab-button.active {
+  color: var(--primary-color, #2563eb);
+  border-bottom-color: var(--primary-color, #2563eb);
+  border-radius: 4px;
+  background: transparent;
+}
+
+/* 标签页内容 */
+.tabs-content {
+  min-height: 300px;
+}
+
+.tab-panel {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 配置结果区域 */
+.config-result {
+  margin-bottom: 1.25rem;
+  background: var(--bg-light, #f8fafc);
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.config-result h3 {
+  color: var(--primary-color, #2563eb);
+  margin-bottom: 0.6rem;
+  font-size: 1.1rem;
+}
+
+/* 配置头部（标题 + 按钮） */
+.config-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.6rem;
+}
+
+.config-header h3 {
+  margin: 0;
+}
+
+/* 配置内容代码块 */
+.config-content {
+  background: #1e293b;
+  color: #f1f5f9;
+  padding: 0.75rem;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  line-height: 1.4;
+  margin-bottom: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* 提示文字 */
+.hint {
+  color: var(--text-muted, #64748b);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* 提示框 */
+.hint-box {
+  background: #e0f2fe;
+  border-left: 3px solid var(--primary-color, #2563eb);
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  color: #075985;
+  font-size: 0.85rem;
+}
+
+.hint-box h4 {
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.hint-box p {
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* 成功信息框 */
+.success-info {
+  background: #d1fae5;
+  padding: 1rem;
+  border-radius: 8px;
+  border-left: 3px solid var(--success-color, #10b981);
+  margin-bottom: 1rem;
+}
+
+.success-info h4 {
+  color: #065f46;
+  margin-bottom: 0.6rem;
+  font-size: 1rem;
+}
+
+.success-info ol {
+  margin-left: 1.2rem;
+  color: #065f46;
+  font-size: 0.9rem;
+}
+
+.success-info li {
+  margin-bottom: 0.35rem;
+}
+
+.success-info code {
+  background: white;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  color: var(--primary-color, #2563eb);
+  word-break: break-all;
+}
+
+.success-info p {
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* 信息区域左右布局（使用说明 + 注意事项） */
+.info-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.info-row .success-info,
+.info-row .hint-box {
+  margin-bottom: 0;
+}
+
+.info-row h4 {
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.info-row ol {
+  margin-left: 1.2rem;
+  font-size: 0.85rem;
+}
+
+.info-row li {
+  margin-bottom: 0.3rem;
+}
+
+.info-row p {
+  margin-bottom: 0.4rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+/* 保存按钮 */
+.btn-save {
+  background: var(--success-color, #10b981);
+  color: white;
+  padding: 0.4rem 0.8rem;
+  font-size: 0.85rem;
+  border-radius: 5px;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-save:hover {
+  background: #059669;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* 内联按钮组（复制+保存按钮并排显示） */
+.button-group-inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* 二维码容器 */
+.qrcode-container {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.qrcode-container h4 {
+  color: var(--primary-color, #2563eb);
+  margin-bottom: 0.6rem;
+  font-size: 1rem;
+}
+
+.qrcode {
+  max-width: 220px;
+  width: 100%;
+  height: auto;
+  border: 3px solid var(--border-color, #e2e8f0);
+  border-radius: 6px;
+  margin: 0 auto;
+  display: block;
+}
+
+.qrcode-hint {
+  margin-top: 0.6rem;
+  color: var(--text-muted, #64748b);
+  font-size: 0.8rem;
+}
+
+/* 响应式 - 移动端 */
+@media (max-width: 768px) {
+  .config-header {
+    flex-direction: column;
+    gap: 0.5rem;
+    align-items: flex-start;
+  }
+
+  .button-group-inline {
+    width: 100%;
+  }
+
+  .btn-save {
+    width: 100%;
+    flex: 1;
+  }
+
+  .qrcode {
+    max-width: 250px;
+  }
+
+  .tabs-nav {
+    flex-direction: column;
+    gap: 0.25rem;
+    border-bottom: none;
+  }
+
+  .tab-button {
+    border-bottom: none;
+    border-left: 3px solid transparent;
+    text-align: left;
+    bottom: 0;
+  }
+
+  .tab-button.active {
+    border-left-color: var(--primary-color, #2563eb);
+    border-bottom-color: transparent;
+    background: var(--bg-light, #f8fafc);
+  }
+
+  /* 移动端信息区域改为上下布局 */
+  .info-row {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+}
+
+/* 深色模式 */
+@media (prefers-color-scheme: dark) {
+  .config-result {
+    background: #1e293b;
+    border-color: var(--border-color, #334155);
+  }
+
+  .config-content {
+    background: #0f172a;
+  }
+
+  .success-info {
+    background: #064e3b;
+    border-left-color: var(--success-color, #10b981);
+  }
+
+  .success-info h4,
+  .success-info ol,
+  .success-info p {
+    color: #d1fae5;
+  }
+
+  .success-info code {
+    background: #0f172a;
+    color: #60a5fa;
+  }
+
+  .hint-box {
+    background: #1e293b;
+    border-left-color: var(--primary-color, #2563eb);
+    color: #93c5fd;
+  }
+
+  .qrcode-container {
+    background: #1e293b;
+  }
+
+  .tab-button:hover {
+    background: var(--bg-light, #1e293b);
+  }
+
+  .tab-button.active {
+    background: transparent;
+  }
+}

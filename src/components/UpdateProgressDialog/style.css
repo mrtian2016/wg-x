@@ -1,0 +1,129 @@
+/* 进度对话框样式 */
+.progress-dialog {
+  position: relative;
+  min-width: 400px;
+  max-width: 500px;
+}
+
+.progress-dialog h3 {
+  color: var(--primary-color, #2563eb);
+  margin-bottom: 1.5rem;
+  font-size: 1.2rem;
+  text-align: center;
+}
+
+/* 进度条容器 */
+.progress-bar-container {
+  width: 100%;
+  height: 15px;
+  background: var(--bg-light, #f8fafc);
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 1rem;
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* 进度条填充 */
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+  transition: width 0.3s ease;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
+}
+
+/* 进度信息 */
+.progress-info {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.progress-percentage {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--primary-color, #2563eb);
+}
+
+.progress-size {
+  font-size: 0.9rem;
+  color: var(--text-muted, #64748b);
+  font-weight: 500;
+}
+
+/* 进度消息 */
+.progress-message {
+  text-align: center;
+  padding: 1rem 0;
+}
+
+.progress-message p {
+  margin: 0;
+  color: var(--text-color, #1e293b);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+/* 加载动画 */
+.spinner {
+  width: 40px;
+  height: 40px;
+  margin: 0 auto 1rem;
+  border: 4px solid var(--bg-light, #f8fafc);
+  border-top-color: var(--primary-color, #2563eb);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 进度对话框响应式 */
+@media (max-width: 768px) {
+  .progress-dialog {
+    min-width: unset;
+    width: 90vw;
+    max-width: 400px;
+  }
+
+  .progress-percentage {
+    font-size: 1.25rem;
+  }
+
+  .progress-size {
+    font-size: 0.8rem;
+  }
+}
+
+/* 进度对话框深色模式 */
+@media (prefers-color-scheme: dark) {
+  .progress-dialog h3 {
+    color: #60a5fa;
+  }
+
+  .progress-bar-container {
+    background: #1e293b;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .progress-percentage {
+    color: #60a5fa;
+  }
+
+  .progress-size {
+    color: #94a3b8;
+  }
+
+  .progress-message p {
+    color: #f1f5f9;
+  }
+
+  .spinner {
+    border-color: #334155;
+    border-top-color: #60a5fa;
+  }
+}

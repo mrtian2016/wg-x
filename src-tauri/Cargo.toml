@@ -1,0 +1,45 @@
+[package]
+name = "wg-x"
+version = "0.2.0"
+description = "WireGuard配置生成器"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "wg_x_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rand = "0.8"
+base64 = "0.22"
+x25519-dalek = "2"
+regex = "1"
+dotenv = "0.15"
+qrcode = "0.14"
+image = "0.25"
+zip = "0.6"
+tauri-plugin-process = "2"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12.24", features = ["json", "rustls-tls"] }
+url = "2.5.7"
+quick-xml = "0.38.3"
+chrono = { version = "0.4.42", features = ["serde"] }
+
+[target."cfg(target_os = \"macos\")".dependencies]
+cocoa = "0.25"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
