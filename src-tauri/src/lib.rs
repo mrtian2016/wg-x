@@ -12,9 +12,14 @@ use x25519_dalek::x25519;
 // WebDAV 同步模块
 mod webdav;
 mod sync;
+mod tunnel;
 
 use sync::{SyncManager, SyncResult};
 use webdav::{WebDavConfig, LastSyncInfo};
+use tunnel::{
+    start_tunnel, stop_tunnel, get_tunnel_list, get_tunnel_details,
+    save_tunnel_config, delete_tunnel_config, get_all_tunnel_configs
+};
 // X25519 基点 (标准值)
 const X25519_BASEPOINT: [u8; 32] = [
     9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1235,6 +1240,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("")
@@ -1309,7 +1315,15 @@ pub fn run() {
             sync_from_webdav,
             sync_bidirectional_webdav,
             save_last_sync_info,
-            load_last_sync_info
+            load_last_sync_info,
+            // 隧道管理命令
+            start_tunnel,
+            stop_tunnel,
+            get_tunnel_list,
+            get_tunnel_details,
+            save_tunnel_config,
+            delete_tunnel_config,
+            get_all_tunnel_configs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

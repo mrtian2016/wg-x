@@ -7,6 +7,7 @@ import ConfirmDialog from "./components/ConfirmDialog";
 import HistoryView from "./pages/HistoryView";
 import ServerManagementView from "./pages/ServerManagementView";
 import WebDavSettingsView from "./pages/WebDavSettingsView";
+import TunnelManagementView from "./pages/TunnelManagementView";
 import ConfigTabs from "./components/ConfigTabs";
 import UpdateProgressDialog from "./components/UpdateProgressDialog";
 import { updateManager } from "./utils/updateManager";
@@ -59,6 +60,12 @@ function App() {
 
   // WebDAV 设置相关状态
   const [showWebDavSettings, setShowWebDavSettings] = useState(false);
+
+  // 隧道管理相关状态
+  const [showTunnelManagement, setShowTunnelManagement] = useState(false);
+
+  // 主视图状态: 'config' 或 'tunnel'
+  const [mainView, setMainView] = useState('config');
 
   const [webdavConfig, setWebdavConfig] = useState({
     enabled: false,
@@ -860,12 +867,34 @@ function App() {
       <Toast messages={messages} onRemove={removeToast} />
 
       <header>
-        <h1>🔐 WireGuard 配置生成器</h1>
+        <div className="header-content">
+          <h1>🔐 WireGuard 配置生成器</h1>
+          <div className="view-switcher">
+            <button
+              className={`view-btn ${mainView === 'config' ? 'active' : ''}`}
+              onClick={() => setMainView('config')}
+            >
+              📝 配置生成
+            </button>
+            <button
+              className={`view-btn ${mainView === 'tunnel' ? 'active' : ''}`}
+              onClick={() => setMainView('tunnel')}
+            >
+              🚇 隧道管理
+            </button>
+          </div>
+        </div>
       </header>
 
       <div className="main-content-wrapper">
-        {/* 服务端管理界面 */}
-        {showServerManagement ? (
+        {/* 根据 mainView 显示不同的主视图 */}
+        {mainView === 'tunnel' ? (
+          /* 隧道管理视图 */
+          <TunnelManagementView
+            onBack={() => setMainView('config')}
+            onShowToast={showToast}
+          />
+        ) : showServerManagement ? (
           <ServerManagementView
             onBack={() => {
               setShowServerManagement(false);

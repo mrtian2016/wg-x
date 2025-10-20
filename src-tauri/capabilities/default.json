@@ -12,6 +12,8 @@
     "updater:default",
     "updater:allow-check",
     "process:allow-restart",
+    "shell:allow-execute",
+    "shell:allow-open",
     {
       "identifier": "shell:allow-execute",
       "allow": [
