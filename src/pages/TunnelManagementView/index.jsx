@@ -27,16 +27,29 @@ function TunnelManagementView({ onBack, onShowToast }) {
   useEffect(() => {
     loadTunnels();
     // 每 2 秒刷新一次隧道状态
-    const interval = setInterval(loadTunnels, 2000);
+    // 但在配置表单打开时暂停轮询,避免 Linux 上的 UI 卡顿
+    const interval = setInterval(() => {
+      if (!showConfigForm) {
+        loadTunnels();
+      }
+    }, 2000);
     return () => clearInterval(interval);
-  }, []);
+  }, [showConfigForm]);
 
   const loadTunnels = async () => {
+    // 防止重复请求(如果正在加载或表单打开,则跳过)
+    if (loading || showConfigForm) {
+      return;
+    }
+
+    setLoading(true);
     try {
       const list = await invoke('get_all_tunnel_configs');
       setTunnels(list);
     } catch (error) {
       console.error('加载隧道列表失败:', error);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -54,8 +67,8 @@ function TunnelManagementView({ onBack, onShowToast }) {
 
   // 从私钥计算公钥
   const handleCalculatePublicKey = async () => {
-    if (!config.privateKey) {
-      onShowToast('请先输入私钥', 'warning');
+    if (!config.privateKey || config.privateKey.trim() === '') {
+      // 私钥为空时静默返回,不显示提示
       return;
     }
     try {
