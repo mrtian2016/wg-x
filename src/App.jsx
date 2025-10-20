@@ -868,7 +868,7 @@ function App() {
 
       <header>
         <div className="header-content">
-          <h1>🔐 WireGuard 配置生成器</h1>
+          <h1>🔐 WireGuard X</h1>
           <div className="view-switcher">
             <button
               className={`view-btn ${mainView === 'config' ? 'active' : ''}`}

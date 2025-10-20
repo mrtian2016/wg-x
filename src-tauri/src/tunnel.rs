@@ -5,6 +5,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use tauri::Manager;
 use tokio::sync::Mutex;
+use std::sync::Arc;
 
 // 进程包装器，用于统一管理不同类型的子进程
 enum ProcessHandle {
@@ -30,6 +31,8 @@ impl ProcessHandle {
 // 全局隧道进程管理
 lazy_static::lazy_static! {
     static ref TUNNEL_PROCESSES: Mutex<HashMap<String, ProcessHandle>> = Mutex::new(HashMap::new());
+    // 保存隧道的完整配置(包含原始 endpoint 域名),用于定期更新
+    static ref TUNNEL_CONFIGS: Mutex<HashMap<String, (String, InterfaceConfig)>> = Mutex::new(HashMap::new());
 }
 
 // macOS 启动 WireGuard 隧道（一次性权限请求完成所有操作）
@@ -272,6 +275,24 @@ fn base64_to_hex(base64_key: &str) -> Result<String, String> {
     Ok(hex::encode(&bytes))
 }
 
+// 解析 endpoint: 如果包含域名,解析为 IP 地址
+fn resolve_endpoint(endpoint: &str) -> Result<String, String> {
+    use std::net::ToSocketAddrs;
+
+    // 尝试解析为 SocketAddr
+    match endpoint.to_socket_addrs() {
+        Ok(mut addrs) => {
+            if let Some(addr) = addrs.next() {
+                // 返回 IP:端口 格式
+                Ok(addr.to_string())
+            } else {
+                Err("无法解析域名".to_string())
+            }
+        }
+        Err(e) => Err(format!("DNS 解析失败: {}", e)),
+    }
+}
+
 // Peer 配置
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PeerConfig {
@@ -391,13 +412,38 @@ pub async fn configure_interface(
             uapi_config.push_str(&format!("public_key={}\n", public_key_hex));
 
             if let Some(endpoint) = peer.endpoint {
-                uapi_config.push_str(&format!("endpoint={}\n", endpoint));
+                if !endpoint.is_empty() {
+                    // wireguard-go 的 UAPI 需要 IP 地址,不支持域名
+                    // 在发送前解析域名为 IP 地址
+                    match resolve_endpoint(&endpoint) {
+                        Ok(resolved_endpoint) => {
+                            println!("解析 endpoint {} -> {}", endpoint, resolved_endpoint);
+                            uapi_config.push_str(&format!("endpoint={}\n", resolved_endpoint));
+                        }
+                        Err(e) => {
+                            return Err(format!("无法解析 endpoint {}: {}", endpoint, e));
+                        }
+                    }
+                }
             }
 
-            if let Some(psk) = peer.preshared_key {
-                // 预共享密钥也需要转换为十六进制
-                let psk_hex = base64_to_hex(&psk)?;
-                uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+            if let Some(ref psk) = peer.preshared_key {
+                if !psk.is_empty() {
+                    // 验证预共享密钥:不能和公钥相同
+                    if psk == &peer.public_key {
+                        return Err("预共享密钥不能与公钥相同,请重新生成或留空".to_string());
+                    }
+                    // 预共享密钥也需要转换为十六进制
+                    match base64_to_hex(psk) {
+                        Ok(psk_hex) => {
+                            uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+                        }
+                        Err(e) => {
+                            println!("警告: 预共享密钥格式无效,已跳过: {}", e);
+                            // 跳过无效的预共享密钥,不影响其他配置
+                        }
+                    }
+                }
             }
 
             if let Some(keepalive) = peer.persistent_keepalive {
@@ -862,6 +908,16 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         Ok(_) => {
             println!("接口配置成功");
 
+            // 保存隧道配置(用于定期更新 endpoint)
+            {
+                let mut configs = TUNNEL_CONFIGS.lock().await;
+                configs.insert(tunnel_id.clone(), (interface_name.clone(), interface_config.clone()));
+            }
+
+            // 启动 endpoint 定期刷新任务(处理动态域名)
+            start_endpoint_refresh_task(tunnel_id.clone(), interface_name.clone());
+            println!("已启动 endpoint 定期刷新任务");
+
             // macOS: 路由已在 start_wireguard_macos 中配置,无需额外操作
             // Linux: 需要额外配置地址和路由
             #[cfg(target_os = "linux")]
@@ -899,6 +955,13 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
     let mut processes = TUNNEL_PROCESSES.lock().await;
 
     if let Some(mut child) = processes.remove(&tunnel_id) {
+        // 同时清理保存的配置(停止 endpoint 刷新任务)
+        {
+            let mut configs = TUNNEL_CONFIGS.lock().await;
+            configs.remove(&tunnel_id);
+            println!("已清理隧道配置,endpoint 刷新任务将自动停止");
+        }
+
         child
             .kill()
             .map_err(|e| format!("停止隧道失败: {}", e))?;
@@ -1384,4 +1447,120 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
     tunnels.sort_by(|a, b| b.id.cmp(&a.id));
 
     Ok(tunnels)
+}
+
+// 定期更新 endpoint 的后台任务
+// 用于处理动态域名(DDNS)的情况
+pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
+    tokio::spawn(async move {
+        // 每 2 分钟检查一次 endpoint
+        let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
+
+        loop {
+            interval.tick().await;
+
+            // 检查隧道是否还在运行
+            let config_opt = {
+                let processes = TUNNEL_PROCESSES.lock().await;
+                if !processes.contains_key(&tunnel_id) {
+                    println!("隧道 {} 已停止,结束 endpoint 刷新任务", tunnel_id);
+                    break;
+                }
+
+                // 获取保存的配置
+                let configs = TUNNEL_CONFIGS.lock().await;
+                configs.get(&tunnel_id).cloned()
+            };
+
+            if let Some((iface, config)) = config_opt {
+                if iface != interface {
+                    println!("接口名称不匹配,跳过更新");
+                    continue;
+                }
+
+                // 遍历所有 peer,检查并更新 endpoint
+                for peer in &config.peers {
+                    if let Some(ref original_endpoint) = peer.endpoint {
+                        if original_endpoint.is_empty() {
+                            continue;
+                        }
+
+                        // 重新解析域名
+                        match resolve_endpoint(original_endpoint) {
+                            Ok(resolved_endpoint) => {
+                                println!(
+                                    "隧道 {}: 重新解析 endpoint {} -> {}",
+                                    tunnel_id, original_endpoint, resolved_endpoint
+                                );
+
+                                // 更新 endpoint (只更新这个 peer 的 endpoint)
+                                let public_key_hex = match base64_to_hex(&peer.public_key) {
+                                    Ok(hex) => hex,
+                                    Err(e) => {
+                                        println!("解析公钥失败: {}", e);
+                                        continue;
+                                    }
+                                };
+
+                                // 构建 UAPI 更新命令
+                                let update_config = format!(
+                                    "set=1\npublic_key={}\nendpoint={}\n\n",
+                                    public_key_hex, resolved_endpoint
+                                );
+
+                                // 发送更新到 socket
+                                let socket_path = format!("/var/run/wireguard/{}.sock", interface);
+                                let result = tokio::task::spawn_blocking(move || {
+                                    let mut stream = match UnixStream::connect(&socket_path) {
+                                        Ok(s) => s,
+                                        Err(e) => {
+                                            println!("连接 socket 失败: {}", e);
+                                            return Err(format!("连接失败: {}", e));
+                                        }
+                                    };
+
+                                    stream
+                                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                                        .ok();
+
+                                    stream.write_all(update_config.as_bytes()).ok();
+
+                                    let mut response = String::new();
+                                    let mut buffer = [0u8; 1024];
+                                    match stream.read(&mut buffer) {
+                                        Ok(n) => {
+                                            response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                                        }
+                                        Err(_) => {}
+                                    }
+
+                                    Ok(response)
+                                })
+                                .await;
+
+                                match result {
+                                    Ok(Ok(response)) => {
+                                        if response.contains("errno=0") || response.is_empty() {
+                                            println!("成功更新 endpoint: {}", resolved_endpoint);
+                                        } else {
+                                            println!("更新 endpoint 返回: {}", response);
+                                        }
+                                    }
+                                    Ok(Err(e)) => {
+                                        println!("更新 endpoint 失败: {}", e);
+                                    }
+                                    Err(e) => {
+                                        println!("任务执行失败: {}", e);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                println!("解析 endpoint {} 失败: {}", original_endpoint, e);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    });
 }
