@@ -207,9 +207,12 @@ function TunnelManagementView({ onBack, onShowToast }) {
   // 编辑隧道配置
   const handleEditTunnel = async (tunnel) => {
     try {
+      // 从后端获取完整配置(包括私钥、peers等)
+      const fullConfig = await invoke('get_tunnel_config', { tunnelId: tunnel.id });
+
       // 转换为表单格式
-      const peers = tunnel.peers && tunnel.peers.length > 0
-        ? tunnel.peers.map(p => ({
+      const peers = fullConfig.peers && fullConfig.peers.length > 0
+        ? fullConfig.peers.map(p => ({
             publicKey: p.public_key || '',
             presharedKey: p.preshared_key || '',
             endpoint: p.endpoint || '',
@@ -219,37 +222,37 @@ function TunnelManagementView({ onBack, onShowToast }) {
         : [];
 
       // 如果没有 peers 数组但有旧格式的单个 peer
-      if (peers.length === 0 && tunnel.peer_public_key) {
+      if (peers.length === 0 && fullConfig.peer_public_key) {
         peers.push({
-          publicKey: tunnel.peer_public_key || '',
-          presharedKey: tunnel.preshared_key || '',
-          endpoint: tunnel.endpoint || '',
-          allowedIps: tunnel.allowed_ips || '0.0.0.0/0',
-          persistentKeepalive: parseInt(tunnel.persistent_keepalive) || 25,
+          publicKey: fullConfig.peer_public_key || '',
+          presharedKey: fullConfig.preshared_key || '',
+          endpoint: fullConfig.endpoint || '',
+          allowedIps: fullConfig.allowed_ips || '0.0.0.0/0',
+          persistentKeepalive: parseInt(fullConfig.persistent_keepalive) || 25,
         });
       }
 
       setConfig({
-        name: tunnel.name,
-        privateKey: tunnel.private_key || '',
-        address: tunnel.address || '',
-        listenPort: tunnel.listen_port || '',
-        dns: tunnel.dns || '',
-        mtu: tunnel.mtu || '1420',
+        name: fullConfig.name,
+        privateKey: fullConfig.private_key || '',
+        address: fullConfig.address || '',
+        listenPort: fullConfig.listen_port || '',
+        dns: fullConfig.dns || '',
+        mtu: fullConfig.mtu || '1420',
         peers,
       });
 
       // 如果有私钥,计算公钥
-      if (tunnel.private_key) {
+      if (fullConfig.private_key) {
         try {
-          const publicKey = await invoke('private_key_to_public', { privateKey: tunnel.private_key });
+          const publicKey = await invoke('private_key_to_public', { privateKey: fullConfig.private_key });
           setLocalPublicKey(publicKey);
         } catch (error) {
           console.error('计算公钥失败:', error);
         }
       }
 
-      setEditingConfig(tunnel);
+      setEditingConfig(fullConfig);
       setShowConfigForm(true);
     } catch (error) {
       onShowToast('加载配置失败: ' + error, 'error');
@@ -259,13 +262,16 @@ function TunnelManagementView({ onBack, onShowToast }) {
   // 启动隧道
   const handleStartTunnel = async (tunnelId) => {
     try {
+      console.log('启动隧道:', tunnelId);
       setLoading(true);
       await invoke('start_tunnel', { tunnelId });
       onShowToast('隧道启动成功', 'success');
       await loadTunnels();
     } catch (error) {
+      console.error('启动隧道失败:', error);
       onShowToast('启动隧道失败: ' + error, 'error');
     } finally {
+      console.log('重置 loading 状态');
       setLoading(false);
     }
   };
@@ -394,6 +400,7 @@ function TunnelManagementView({ onBack, onShowToast }) {
                       onClick={() => handleStopTunnel(tunnel.id)}
                       className="btn-danger"
                       disabled={loading}
+                      title={loading ? '操作中...' : '停止隧道'}
                     >
                       停止
                     </button>
@@ -402,6 +409,7 @@ function TunnelManagementView({ onBack, onShowToast }) {
                       onClick={() => handleStartTunnel(tunnel.id)}
                       className="btn-success"
                       disabled={loading}
+                      title={loading ? '操作中...' : '启动隧道'}
                     >
                       启动
                     </button>

@@ -157,7 +157,10 @@ fn start_wireguard_macos(
 // macOS 停止 WireGuard 进程
 #[cfg(target_os = "macos")]
 fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
-    let shell_command = format!("/bin/kill -TERM {}", pid);
+    println!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
+
+    // 使用 SIGKILL (-9) 确保进程被强制终止
+    let shell_command = format!("/bin/kill -9 {}", pid);
 
     let applescript = format!(
         "do shell script \"{}\" with administrator privileges",
@@ -172,9 +175,13 @@ fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
+        if error_msg.contains("User canceled") {
+            return Err("用户取消了授权".to_string());
+        }
         return Err(format!("终止进程失败: {}", error_msg));
     }
 
+    println!("隧道进程已终止");
     Ok(())
 }
 
@@ -348,74 +355,104 @@ pub async fn configure_interface(
 ) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
 
-    // 连接到 UAPI socket
-    let mut stream = UnixStream::connect(&socket_path)
-        .map_err(|e| format!("无法连接到 socket: {}", e))?;
+    // 在阻塞线程池中执行同步 I/O
+    tokio::task::spawn_blocking(move || {
+        // 连接到 UAPI socket
+        let mut stream = UnixStream::connect(&socket_path)
+            .map_err(|e| format!("无法连接到 socket: {}", e))?;
 
-    // 构建配置命令
-    let mut uapi_config = String::from("set=1\n");
+        // 设置超时
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+            .map_err(|e| format!("设置超时失败: {}", e))?;
 
-    // 接口配置 - 将 Base64 私钥转换为十六进制
-    let private_key_hex = base64_to_hex(&config.private_key)?;
-    uapi_config.push_str(&format!("private_key={}\n", private_key_hex));
+        // 构建配置命令
+        let mut uapi_config = String::from("set=1\n");
 
-    if let Some(port) = config.listen_port {
-        uapi_config.push_str(&format!("listen_port={}\n", port));
-    }
+        // 接口配置 - 将 Base64 私钥转换为十六进制
+        let private_key_hex = base64_to_hex(&config.private_key)?;
+        uapi_config.push_str(&format!("private_key={}\n", private_key_hex));
 
-    if let Some(fwmark) = config.fwmark {
-        uapi_config.push_str(&format!("fwmark={}\n", fwmark));
-    }
-
-    if config.replace_peers {
-        uapi_config.push_str("replace_peers=true\n");
-    }
-
-    // Peer 配置
-    for peer in config.peers {
-        // 将 Base64 公钥转换为十六进制
-        let public_key_hex = base64_to_hex(&peer.public_key)?;
-        uapi_config.push_str(&format!("public_key={}\n", public_key_hex));
-
-        if let Some(endpoint) = peer.endpoint {
-            uapi_config.push_str(&format!("endpoint={}\n", endpoint));
+        if let Some(port) = config.listen_port {
+            uapi_config.push_str(&format!("listen_port={}\n", port));
         }
 
-        if let Some(psk) = peer.preshared_key {
-            // 预共享密钥也需要转换为十六进制
-            let psk_hex = base64_to_hex(&psk)?;
-            uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+        if let Some(fwmark) = config.fwmark {
+            uapi_config.push_str(&format!("fwmark={}\n", fwmark));
         }
 
-        if let Some(keepalive) = peer.persistent_keepalive {
-            uapi_config.push_str(&format!("persistent_keepalive_interval={}\n", keepalive));
+        if config.replace_peers {
+            uapi_config.push_str("replace_peers=true\n");
         }
 
-        // 允许的 IP 地址
-        for allowed_ip in peer.allowed_ips {
-            uapi_config.push_str(&format!("allowed_ip={}\n", allowed_ip));
+        // Peer 配置
+        for peer in config.peers {
+            // 将 Base64 公钥转换为十六进制
+            let public_key_hex = base64_to_hex(&peer.public_key)?;
+            uapi_config.push_str(&format!("public_key={}\n", public_key_hex));
+
+            if let Some(endpoint) = peer.endpoint {
+                uapi_config.push_str(&format!("endpoint={}\n", endpoint));
+            }
+
+            if let Some(psk) = peer.preshared_key {
+                // 预共享密钥也需要转换为十六进制
+                let psk_hex = base64_to_hex(&psk)?;
+                uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+            }
+
+            if let Some(keepalive) = peer.persistent_keepalive {
+                uapi_config.push_str(&format!("persistent_keepalive_interval={}\n", keepalive));
+            }
+
+            // 允许的 IP 地址
+            for allowed_ip in peer.allowed_ips {
+                uapi_config.push_str(&format!("allowed_ip={}\n", allowed_ip));
+            }
         }
-    }
 
-    // 结束配置（两个换行符）
-    uapi_config.push_str("\n");
+        // 结束配置（两个换行符）
+        uapi_config.push_str("\n");
 
-    // 发送配置
-    stream
-        .write_all(uapi_config.as_bytes())
-        .map_err(|e| format!("配置写入失败: {}", e))?;
+        println!("发送 UAPI 配置:\n{}", uapi_config);
 
-    // 读取响应
-    let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+        // 发送配置
+        stream
+            .write_all(uapi_config.as_bytes())
+            .map_err(|e| format!("配置写入失败: {}", e))?;
 
-    if response.contains("errno=") {
-        Err(format!("配置失败: {}", response))
-    } else {
-        Ok("配置应用成功".to_string())
-    }
+        // 读取响应 - 按块读取直到遇到双换行符
+        let mut response = String::new();
+        let mut buffer = [0u8; 4096];
+
+        loop {
+            match stream.read(&mut buffer) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                    // UAPI 响应以 errno=0 或双换行符结束
+                    if response.contains("\n\n") || response.contains("errno=") {
+                        break;
+                    }
+                }
+                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                    if !response.is_empty() {
+                        break;
+                    }
+                    return Err("读取响应超时".to_string());
+                }
+                Err(e) => return Err(format!("读取响应失败: {}", e)),
+            }
+        }
+
+        println!("UAPI 响应:\n{}", response);
+
+        if response.contains("errno=") && !response.contains("errno=0") {
+            Err(format!("配置失败: {}", response))
+        } else {
+            Ok("配置应用成功".to_string())
+        }
+    }).await
+    .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
 // 添加 Peer
@@ -870,24 +907,63 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
         // 即使进程不在列表中,也检查接口是否存在并尝试清理
         let interface_name = generate_interface_name(&tunnel_id);
         if interface_exists(&interface_name) {
+            println!("检测到残留接口 {},尝试清理...", interface_name);
+
             // 接口存在但进程不在列表中,可能是残留的接口
             // 尝试通过杀死 wireguard-go 进程来清理
             #[cfg(target_os = "macos")]
             {
-                // 查找并杀死 wireguard-go 进程
-                let _ = std::process::Command::new("pkill")
-                    .args(["-f", &format!("wireguard-go.*{}", interface_name)])
+                // 使用 osascript 请求管理员权限来杀死进程
+                let shell_command = format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
+
+                let applescript = format!(
+                    "do shell script \"{}\" with administrator privileges",
+                    shell_command.replace('\"', "\\\"")
+                );
+
+                println!("请求管理员权限以停止隧道...");
+
+                let output = std::process::Command::new("osascript")
+                    .arg("-e")
+                    .arg(&applescript)
                     .output();
+
+                match output {
+                    Ok(result) => {
+                        if result.status.success() {
+                            println!("已发送终止信号给 wireguard-go 进程");
+                        } else {
+                            let error_msg = String::from_utf8_lossy(&result.stderr);
+                            println!("终止进程失败: {}", error_msg);
+                            if error_msg.contains("User canceled") {
+                                return Err("用户取消了授权".to_string());
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        println!("执行命令失败: {}", e);
+                    }
+                }
             }
 
             #[cfg(target_os = "linux")]
             {
                 let _ = std::process::Command::new("sudo")
-                    .args(["pkill", "-f", &format!("wireguard-go.*{}", interface_name)])
+                    .args(["pkill", "-9", "-f", &format!("wireguard-go.*{}", interface_name)])
                     .output();
             }
 
-            return Err(format!("隧道进程不在列表中,但接口 {} 可能存在。已尝试清理,请稍后重试", interface_name));
+            // 等待进程终止
+            tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+
+            // 检查接口是否已被清理
+            if !interface_exists(&interface_name) {
+                println!("接口已成功清理");
+                return Ok(());
+            } else {
+                println!("接口仍然存在,可能需要手动清理");
+                return Err(format!("已尝试清理残留接口 {},但仍然存在。请检查系统进程或重启应用", interface_name));
+            }
         }
 
         Err("隧道未运行".to_string())
@@ -1130,6 +1206,29 @@ pub async fn save_tunnel_config(app: tauri::AppHandle, config: TunnelConfig) -> 
     std::fs::write(&file_path, json).map_err(|e| format!("保存隧道配置失败: {}", e))?;
 
     Ok(())
+}
+
+// 获取隧道完整配置(用于编辑)
+#[tauri::command]
+pub async fn get_tunnel_config(app: tauri::AppHandle, tunnel_id: String) -> Result<TunnelConfig, String> {
+    let app_data_dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+
+    let config_file = app_data_dir.join("tunnels").join(format!("{}.json", tunnel_id));
+
+    if !config_file.exists() {
+        return Err("隧道配置不存在".to_string());
+    }
+
+    let content = std::fs::read_to_string(&config_file)
+        .map_err(|e| format!("读取配置失败: {}", e))?;
+
+    let tunnel_config: TunnelConfig =
+        serde_json::from_str(&content).map_err(|e| format!("解析配置失败: {}", e))?;
+
+    Ok(tunnel_config)
 }
 
 // 删除隧道配置

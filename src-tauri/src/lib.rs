@@ -18,7 +18,7 @@ use sync::{SyncManager, SyncResult};
 use webdav::{WebDavConfig, LastSyncInfo};
 use tunnel::{
     start_tunnel, stop_tunnel, get_tunnel_list, get_tunnel_details,
-    save_tunnel_config, delete_tunnel_config, get_all_tunnel_configs
+    save_tunnel_config, delete_tunnel_config, get_all_tunnel_configs, get_tunnel_config
 };
 // X25519 基点 (标准值)
 const X25519_BASEPOINT: [u8; 32] = [
@@ -1323,7 +1323,8 @@ pub fn run() {
             get_tunnel_details,
             save_tunnel_config,
             delete_tunnel_config,
-            get_all_tunnel_configs
+            get_all_tunnel_configs,
+            get_tunnel_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
