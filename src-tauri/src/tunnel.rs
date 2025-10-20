@@ -212,35 +212,11 @@ fn start_wireguard_linux(
     let escaped_user = user.replace('\'', "'\\''");
     let escaped_address = address.replace('\'', "'\\''");
 
-    // 获取当前用户的 UID 和 GID
-    // 使用 id 命令获取,比环境变量更可靠
-    let uid_output = std::process::Command::new("id")
-        .arg("-u")
-        .arg(&user)
-        .output()
-        .ok();
-    let uid = uid_output
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "1000".to_string());
-
-    let gid_output = std::process::Command::new("id")
-        .arg("-g")
-        .arg(&user)
-        .output()
-        .ok();
-    let gid = gid_output
-        .and_then(|o| String::from_utf8(o.stdout).ok())
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|| "1000".to_string());
-
-    println!("用户 {} 的 UID={}, GID={}", user, uid, gid);
-
-    // 方案:使用 setpriv 以普通用户身份运行 wireguard-go
-    // 这样 socket 文件就会以普通用户权限创建
+    // Linux 方案:以 root 运行 wireguard-go,然后手动修改 socket 目录权限
+    // 关键:在 wireguard-go 启动前就设置好目录权限
     let mut shell_script = format!(
-        "setpriv --reuid={} --regid={} --init-groups '{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 2 && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
-        uid, gid, escaped_wg_path, escaped_interface,
+        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 2 && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
+        escaped_wg_path, escaped_interface,
         escaped_address, escaped_interface, escaped_interface
     );
 
