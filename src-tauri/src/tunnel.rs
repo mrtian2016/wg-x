@@ -10,8 +10,8 @@ use std::sync::Arc;
 // 进程包装器，用于统一管理不同类型的子进程
 enum ProcessHandle {
     StdProcess(std::process::Child),
-    #[cfg(target_os = "macos")]
-    MacOSPrivilegedProcess(i32), // 存储 PID
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    PrivilegedProcess(i32), // 存储 PID,用于 macOS 和 Linux 的权限提升进程
 }
 
 impl ProcessHandle {
@@ -21,8 +21,12 @@ impl ProcessHandle {
                 child.kill().map_err(|e| format!("杀死进程失败: {}", e))
             }
             #[cfg(target_os = "macos")]
-            ProcessHandle::MacOSPrivilegedProcess(pid) => {
+            ProcessHandle::PrivilegedProcess(pid) => {
                 stop_wireguard_macos(*pid)
+            }
+            #[cfg(target_os = "linux")]
+            ProcessHandle::PrivilegedProcess(pid) => {
+                stop_wireguard_linux(*pid)
             }
         }
     }
@@ -154,7 +158,7 @@ fn start_wireguard_macos(
 
     println!("wireguard-go 已启动，PID: {}", pid);
 
-    Ok(ProcessHandle::MacOSPrivilegedProcess(pid))
+    Ok(ProcessHandle::PrivilegedProcess(pid))
 }
 
 // macOS 停止 WireGuard 进程
@@ -188,14 +192,127 @@ fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
     Ok(())
 }
 
-// Linux 使用 sudo
+// Linux: 通过 pkexec 或 sudo 获取权限并一次性完成所有配置
+// pkexec 会弹出图形界面授权对话框,类似 macOS 的 osascript
 #[cfg(target_os = "linux")]
-fn execute_with_privileges(command: &str, args: &[&str]) -> Result<ProcessHandle, String> {
-    let mut cmd = std::process::Command::new("sudo");
-    cmd.arg(command);
-    cmd.args(args);
-    let child = cmd.spawn().map_err(|e| format!("启动进程失败: {}", e))?;
-    Ok(ProcessHandle::StdProcess(child))
+fn start_wireguard_linux(
+    wg_path: &str,
+    interface: &str,
+    address: &str,
+    routes: &[String],
+) -> Result<ProcessHandle, String> {
+    println!("准备启动 WireGuard 隧道 (Linux)...");
+
+    // 获取当前用户
+    let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
+
+    // 转义路径和参数
+    let escaped_wg_path = wg_path.replace('\'', "'\\''");
+    let escaped_interface = interface.replace('\'', "'\\''");
+    let escaped_user = user.replace('\'', "'\\''");
+    let escaped_address = address.replace('\'', "'\\''");
+
+    // 构建完整的 shell 脚本(一次性完成所有操作)
+    let mut shell_script = format!(
+        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 1 && /bin/chown '{}' /var/run/wireguard/{}.sock && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
+        escaped_wg_path, escaped_interface, escaped_user, escaped_interface,
+        escaped_address, escaped_interface, escaped_interface
+    );
+
+    // 添加路由
+    for route in routes {
+        if route == "0.0.0.0/0" || route == "::/0" {
+            continue;
+        }
+        let escaped_route = route.replace('\'', "'\\''");
+        shell_script.push_str(&format!(
+            " && (/sbin/ip route delete '{}' > /dev/null 2>&1 || true) && (/sbin/ip route add '{}' dev '{}' > /dev/null 2>&1 || true)",
+            escaped_route, escaped_route, escaped_interface
+        ));
+    }
+
+    shell_script.push_str(" && echo $WG_PID");
+
+    println!("执行命令脚本");
+
+    // 尝试使用 pkexec (图形界面授权)
+    let use_pkexec = std::process::Command::new("which")
+        .arg("pkexec")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    let output = if use_pkexec {
+        println!("使用 pkexec 请求管理员权限...");
+        std::process::Command::new("pkexec")
+            .arg("sh")
+            .arg("-c")
+            .arg(&shell_script)
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    } else {
+        println!("使用 sudo 请求管理员权限(可能需要在终端输入密码)...");
+        std::process::Command::new("sudo")
+            .arg("sh")
+            .arg("-c")
+            .arg(&shell_script)
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    };
+
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("启动隧道失败: {}", error_msg));
+    }
+
+    // 解析返回的 PID
+    let pid_str = String::from_utf8_lossy(&output.stdout);
+    let pid: i32 = pid_str
+        .trim()
+        .parse()
+        .map_err(|e| format!("解析 PID 失败: {} (输出: {})", e, pid_str))?;
+
+    println!("wireguard-go 已启动,PID: {}", pid);
+
+    // 返回包含 PID 的进程句柄
+    // 注意: Linux 使用特殊的标记来表示这是通过权限提升启动的进程
+    Ok(ProcessHandle::PrivilegedProcess(pid))
+}
+
+// 停止 Linux 隧道
+#[cfg(target_os = "linux")]
+fn stop_wireguard_linux(pid: i32) -> Result<(), String> {
+    println!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
+
+    // 尝试使用 pkexec
+    let use_pkexec = std::process::Command::new("which")
+        .arg("pkexec")
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false);
+
+    let output = if use_pkexec {
+        std::process::Command::new("pkexec")
+            .arg("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    } else {
+        std::process::Command::new("sudo")
+            .arg("kill")
+            .arg("-9")
+            .arg(pid.to_string())
+            .output()
+            .map_err(|e| format!("执行命令失败: {}", e))?
+    };
+
+    if !output.status.success() {
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("终止进程失败: {}", error_msg));
+    }
+
+    Ok(())
 }
 
 // 检查接口是否存在
@@ -867,12 +984,14 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         }
     }
 
-    // Linux: 传统方式
+    // Linux: 一次性权限请求，完成所有配置（包括路由）
     #[cfg(target_os = "linux")]
     {
-        let process_handle = execute_with_privileges(
+        let process_handle = start_wireguard_linux(
             sidecar_path_str,
-            &["-f", &interface_name]
+            &interface_name,
+            &tunnel_config.address,
+            &all_routes,
         ).map_err(|e| format!("启动隧道失败: {}", e))?;
 
         // 保存进程句柄
@@ -881,7 +1000,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             processes.insert(tunnel_id.clone(), process_handle);
         }
 
-        // 等待 socket 文件创建
+        // 等待 socket 文件创建（最多等待 5 秒）
         let socket_path = format!("/var/run/wireguard/{}.sock", interface_name);
         let mut retries = 0;
         let max_retries = 50;
@@ -918,25 +1037,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             start_endpoint_refresh_task(tunnel_id.clone(), interface_name.clone());
             println!("已启动 endpoint 定期刷新任务");
 
-            // macOS: 路由已在 start_wireguard_macos 中配置,无需额外操作
-            // Linux: 需要额外配置地址和路由
-            #[cfg(target_os = "linux")]
-            {
-                let address = &tunnel_config.address;
-                let _ = std::process::Command::new("sudo")
-                    .args(["ip", "address", "add", address, "dev", &interface_name])
-                    .output();
-
-                let _ = std::process::Command::new("sudo")
-                    .args(["ip", "link", "set", &interface_name, "up"])
-                    .output();
-
-                if !all_routes.is_empty() {
-                    if let Err(e) = configure_routes_linux(&interface_name, &all_routes) {
-                        println!("警告: 配置路由失败: {}", e);
-                    }
-                }
-            }
+            // macOS 和 Linux: 路由和接口配置已在启动函数中完成,无需额外操作
 
             println!("隧道启动完成: {}", interface_name);
             Ok(())
@@ -1011,9 +1112,45 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
 
             #[cfg(target_os = "linux")]
             {
-                let _ = std::process::Command::new("sudo")
-                    .args(["pkill", "-9", "-f", &format!("wireguard-go.*{}", interface_name)])
-                    .output();
+                // 使用 pkexec 或 sudo 请求管理员权限来杀死进程
+                let shell_command = format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
+
+                // 尝试使用 pkexec
+                let use_pkexec = std::process::Command::new("which")
+                    .arg("pkexec")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+
+                println!("请求管理员权限以停止隧道...");
+
+                let output = if use_pkexec {
+                    std::process::Command::new("pkexec")
+                        .arg("sh")
+                        .arg("-c")
+                        .arg(&shell_command)
+                        .output()
+                } else {
+                    std::process::Command::new("sudo")
+                        .arg("sh")
+                        .arg("-c")
+                        .arg(&shell_command)
+                        .output()
+                };
+
+                match output {
+                    Ok(result) => {
+                        if result.status.success() {
+                            println!("已发送终止信号给 wireguard-go 进程");
+                        } else {
+                            let error_msg = String::from_utf8_lossy(&result.stderr);
+                            println!("终止进程失败: {}", error_msg);
+                        }
+                    }
+                    Err(e) => {
+                        println!("执行命令失败: {}", e);
+                    }
+                }
             }
 
             // 等待进程终止
