@@ -1593,6 +1593,9 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
         // 每 2 分钟检查一次 endpoint
         let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(120));
 
+        // 保存每个 peer 上次解析的 endpoint,避免重复更新
+        let mut last_resolved_endpoints: HashMap<String, String> = HashMap::new();
+
         loop {
             interval.tick().await;
 
@@ -1625,9 +1628,22 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                         // 重新解析域名
                         match resolve_endpoint(original_endpoint) {
                             Ok(resolved_endpoint) => {
+                                // 检查 IP 是否变化
+                                let last_endpoint = last_resolved_endpoints.get(&peer.public_key);
+
+                                if let Some(last) = last_endpoint {
+                                    if last == &resolved_endpoint {
+                                        // IP 没有变化,跳过更新
+                                        continue;
+                                    }
+                                }
+
                                 println!(
-                                    "隧道 {}: 重新解析 endpoint {} -> {}",
-                                    tunnel_id, original_endpoint, resolved_endpoint
+                                    "隧道 {}: endpoint {} 解析结果变化: {} -> {}",
+                                    tunnel_id,
+                                    original_endpoint,
+                                    last_endpoint.unwrap_or(&"(首次)".to_string()),
+                                    resolved_endpoint
                                 );
 
                                 // 更新 endpoint (只更新这个 peer 的 endpoint)
@@ -1679,6 +1695,8 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                     Ok(Ok(response)) => {
                                         if response.contains("errno=0") || response.is_empty() {
                                             println!("成功更新 endpoint: {}", resolved_endpoint);
+                                            // 保存新的 endpoint,下次对比时使用
+                                            last_resolved_endpoints.insert(peer.public_key.clone(), resolved_endpoint);
                                         } else {
                                             println!("更新 endpoint 返回: {}", response);
                                         }
