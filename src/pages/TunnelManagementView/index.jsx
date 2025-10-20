@@ -327,9 +327,13 @@ function TunnelManagementView({ onBack, onShowToast }) {
     const now = new Date();
     const diff = Math.floor((now - date) / 1000);
 
-    if (diff < 60) return `${diff} 秒前`;
+    // 2分钟内显示秒数,更精确
+    if (diff < 120) return `${diff} 秒前`;
+    // 1小时内显示分钟数
     if (diff < 3600) return `${Math.floor(diff / 60)} 分钟前`;
+    // 1天内显示小时数
     if (diff < 86400) return `${Math.floor(diff / 3600)} 小时前`;
+    // 超过1天显示天数
     return `${Math.floor(diff / 86400)} 天前`;
   };
 
