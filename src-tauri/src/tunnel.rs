@@ -214,8 +214,8 @@ fn start_wireguard_linux(
 
     // 构建完整的 shell 脚本(一次性完成所有操作)
     let mut shell_script = format!(
-        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 1 && /bin/chown '{}' /var/run/wireguard/{}.sock && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
-        escaped_wg_path, escaped_interface, escaped_user, escaped_interface,
+        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 2 && /bin/chown '{}:{}' /var/run/wireguard/{}.sock && /bin/chmod 660 /var/run/wireguard/{}.sock && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
+        escaped_wg_path, escaped_interface, escaped_user, escaped_user, escaped_interface, escaped_interface,
         escaped_address, escaped_interface, escaped_interface
     );
 
@@ -1000,14 +1000,16 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             processes.insert(tunnel_id.clone(), process_handle);
         }
 
-        // 等待 socket 文件创建（最多等待 5 秒）
+        // 等待 socket 文件创建（最多等待 8 秒,Linux 需要更长时间）
         let socket_path = format!("/var/run/wireguard/{}.sock", interface_name);
         let mut retries = 0;
-        let max_retries = 50;
+        let max_retries = 80;
 
         while retries < max_retries {
             if std::path::Path::new(&socket_path).exists() {
-                tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+                // socket 文件已创建,额外等待权限设置完成
+                println!("socket 文件已创建,等待权限设置...");
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
                 break;
             }
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
