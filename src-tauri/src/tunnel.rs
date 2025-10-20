@@ -1488,10 +1488,10 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
     for entry in entries {
         if let Ok(entry) = entry {
             let path = entry.path();
-            println!("检查文件: {:?}", path);
+            // println!("检查文件: {:?}", path);
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    println!("读取配置成功,长度: {}", content.len());
+                    // println!("读取配置成功,长度: {}", content.len());
                     match serde_json::from_str::<TunnelConfig>(&content) {
                         Ok(tunnel_config) => {
                             println!("解析配置成功: id={}, name={}", tunnel_config.id, tunnel_config.name);
@@ -1564,7 +1564,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                             allowed_ips,
                         };
 
-                        println!("添加隧道: {:?}", tunnel_status.name);
+                        // println!("添加隧道: {:?}", tunnel_status.name);
                         tunnels.push(tunnel_status);
                         }
                         Err(e) => {
@@ -1578,7 +1578,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
         }
     }
 
-    println!("共找到 {} 个隧道", tunnels.len());
+    // println!("共找到 {} 个隧道", tunnels.len());
 
     // 按创建时间降序排序
     tunnels.sort_by(|a, b| b.id.cmp(&a.id));
