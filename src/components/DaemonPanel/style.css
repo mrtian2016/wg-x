@@ -1,0 +1,197 @@
+/* DaemonPanel 守护进程管理面板样式 */
+
+.daemon-panel-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+.daemon-panel-modal {
+  background: white;
+  border-radius: 12px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+  max-width: 800px;
+  width: 90%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  animation: slideUp 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(20px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.daemon-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.daemon-panel-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.daemon-panel-header .btn-close {
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #6b7280;
+  padding: 0.25rem;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.daemon-panel-header .btn-close:hover {
+  color: #1f2937;
+}
+
+.daemon-panel-body {
+  padding: 1.5rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+/* 状态信息网格 */
+.daemon-status-grid {
+  background: white;
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid #e5e7eb;
+  margin-bottom: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.daemon-status-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.daemon-status-item strong {
+  color: #6b7280;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* 操作按钮区域 */
+.daemon-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.daemon-actions-row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.daemon-uninstall-btn {
+  margin-left: auto;
+}
+
+/* 日志容器 */
+.daemon-logs-container {
+  margin-top: 1.5rem;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.daemon-logs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.daemon-logs-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+.daemon-logs-header .btn-sm {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.daemon-logs-content {
+  background: #000;
+  color: #0f0;
+  padding: 1rem;
+  overflow: auto;
+  max-height: 400px;
+  font-size: 12px;
+  font-family: 'Courier New', Consolas, monospace;
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .daemon-panel-modal {
+    width: 95%;
+    max-height: 95vh;
+  }
+
+  .daemon-panel-header,
+  .daemon-panel-body {
+    padding: 1rem;
+  }
+
+  .daemon-status-grid {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .daemon-actions-row {
+    flex-direction: column;
+  }
+
+  .daemon-actions-row button {
+    width: 100%;
+  }
+
+  .daemon-uninstall-btn {
+    margin-left: 0;
+  }
+}
