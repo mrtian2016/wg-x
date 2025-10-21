@@ -518,8 +518,9 @@ fn interface_exists(name: &str) -> bool {
 
 /// 查找 wireguard-go 可执行文件
 fn find_wireguard_go() -> Result<String, String> {
-    // 尝试常见路径
+    // 尝试常见路径（优先级顺序）
     let paths = vec![
+        "/opt/wg-x/wireguard-go",  // 安装守护进程时复制的位置（优先使用）
         "/usr/local/bin/wireguard-go",
         "/usr/bin/wireguard-go",
         "/opt/wireguard-go/wireguard-go",

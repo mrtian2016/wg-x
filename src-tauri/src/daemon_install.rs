@@ -103,6 +103,16 @@ pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
         .to_str()
         .ok_or("无效的可执行文件路径")?;
 
+    // 获取 wireguard-go sidecar 的路径
+    let sidecar_path = app
+        .path()
+        .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
+        .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?;
+
+    let sidecar_path_str = sidecar_path
+        .to_str()
+        .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
+
     // 创建临时安装脚本
     let script_content = format!(
         r#"#!/bin/bash
@@ -110,24 +120,30 @@ set -e
 
 echo "=== WireGuard X 守护进程安装 ==="
 
-# 1. 复制可执行文件
-echo "[1/4] 复制可执行文件..."
+# 1. 创建 /opt/wg-x 目录并复制 wireguard-go
+echo "[1/5] 创建目录并复制 wireguard-go..."
+mkdir -p /opt/wg-x
+cp "{}" /opt/wg-x/wireguard-go
+chmod 755 /opt/wg-x/wireguard-go
+
+# 2. 复制主可执行文件
+echo "[2/5] 复制可执行文件..."
 cp "{}" /usr/local/bin/wg-x
 chmod 755 /usr/local/bin/wg-x
 
-# 2. 创建 systemd service 文件
-echo "[2/4] 创建 systemd service..."
+# 3. 创建 systemd service 文件
+echo "[3/5] 创建 systemd service..."
 cat > /etc/systemd/system/wg-x-daemon.service << 'SERVICEEOF'
 {}SERVICEEOF
 
 chmod 644 /etc/systemd/system/wg-x-daemon.service
 
-# 3. 重新加载 systemd
-echo "[3/4] 重新加载 systemd..."
+# 4. 重新加载 systemd
+echo "[4/5] 重新加载 systemd..."
 systemctl daemon-reload
 
-# 4. 启动并启用守护进程
-echo "[4/4] 启动守护进程..."
+# 5. 启动并启用守护进程
+echo "[5/5] 启动守护进程..."
 systemctl enable wg-x-daemon
 systemctl start wg-x-daemon
 
@@ -142,7 +158,7 @@ else
     exit 1
 fi
 "#,
-        current_exe_str, SYSTEMD_SERVICE_CONTENT
+        sidecar_path_str, current_exe_str, SYSTEMD_SERVICE_CONTENT
     );
 
     // 写入临时脚本
@@ -187,23 +203,27 @@ set -e
 echo "=== WireGuard X 守护进程卸载 ==="
 
 # 1. 停止并禁用服务
-echo "[1/4] 停止服务..."
+echo "[1/5] 停止服务..."
 systemctl stop wg-x-daemon || true
 systemctl disable wg-x-daemon || true
 
 # 2. 删除 systemd service 文件
-echo "[2/4] 删除 systemd service..."
+echo "[2/5] 删除 systemd service..."
 rm -f /etc/systemd/system/wg-x-daemon.service
 
 # 3. 重新加载 systemd
-echo "[3/4] 重新加载 systemd..."
+echo "[3/5] 重新加载 systemd..."
 systemctl daemon-reload
 
-# 4. 删除可执行文件
-echo "[4/4] 删除可执行文件..."
+# 4. 删除可执行文件和配置目录
+echo "[4/5] 删除可执行文件..."
 rm -f /usr/local/bin/wg-x
 
-# 5. 清理 socket 文件
+# 5. 清理 /opt/wg-x 目录
+echo "[5/5] 清理配置目录..."
+rm -rf /opt/wg-x
+
+# 清理 socket 文件
 rm -f /var/run/wg-x-daemon.sock
 
 echo "✓ 守护进程已卸载"
