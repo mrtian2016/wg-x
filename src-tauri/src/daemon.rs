@@ -158,13 +158,37 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         return Err(format!("接口 {} 已存在", config.interface_name));
     }
 
-    // 使用配置中传入的 wireguard-go 路径
-    let wg_go_path = &config.wireguard_go_path;
+    // 使用配置中传入的 wireguard-go 路径,如果无效则尝试查找备用路径
+    let wg_go_path = if !config.wireguard_go_path.is_empty() && std::path::Path::new(&config.wireguard_go_path).exists() {
+        println!("使用应用传入的 wireguard-go 路径: {}", config.wireguard_go_path);
+        config.wireguard_go_path.clone()
+    } else {
+        println!("应用传入的路径无效或不存在: {}", config.wireguard_go_path);
+        println!("尝试在系统路径中查找 wireguard-go...");
 
-    // 验证 wireguard-go 可执行文件是否存在
-    if !std::path::Path::new(wg_go_path).exists() {
-        return Err(format!("wireguard-go 可执行文件不存在: {}", wg_go_path));
-    }
+        // 尝试在系统路径中查找
+        match find_wireguard_go() {
+            Ok(path) => {
+                println!("在系统路径中找到 wireguard-go: {}", path);
+                path
+            }
+            Err(e) => {
+                eprintln!("无法找到 wireguard-go 可执行文件");
+                eprintln!("应用传入的路径: {}", config.wireguard_go_path);
+                eprintln!("当前工作目录: {:?}", std::env::current_dir());
+                return Err(format!(
+                    "无法找到 wireguard-go 可执行文件。\n\
+                    应用传入的路径不存在: {}\n\
+                    系统路径中也未找到: {}\n\
+                    \n\
+                    解决方案:\n\
+                    1. 将 wireguard-go 复制到 /usr/local/bin/\n\
+                    2. 或安装 wireguard-go 包: sudo apt install wireguard-tools",
+                    config.wireguard_go_path, e
+                ));
+            }
+        }
+    };
 
     println!(
         "启动 WireGuard 隧道: interface={}, wireguard-go={}",

@@ -205,6 +205,7 @@ fn start_wireguard_linux_daemon(
     use crate::daemon_ipc::{IpcClient, PeerConfigIpc, TunnelConfigIpc};
 
     println!("使用守护进程启动 WireGuard 隧道 (Linux)...");
+    println!("传递给守护进程的 wireguard-go 路径: {}", wireguard_go_path);
 
     // 检查守护进程是否运行
     if !IpcClient::is_daemon_running() {
@@ -1005,6 +1006,8 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     let sidecar_path_str = sidecar_path
         .to_str()
         .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
+
+    println!("wireguard-go 路径: {}", sidecar_path_str);
 
     // macOS: 一次性权限请求，完成所有配置（包括路由）
     #[cfg(target_os = "macos")]
