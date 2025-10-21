@@ -33,6 +33,7 @@ pub struct TunnelConfigIpc {
     pub address: String,
     pub listen_port: Option<u16>,
     pub peers: Vec<PeerConfigIpc>,
+    pub wireguard_go_path: String, // wireguard-go 可执行文件的完整路径
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

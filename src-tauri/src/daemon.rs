@@ -158,8 +158,13 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         return Err(format!("接口 {} 已存在", config.interface_name));
     }
 
-    // 查找 wireguard-go 可执行文件
-    let wg_go_path = find_wireguard_go()?;
+    // 使用配置中传入的 wireguard-go 路径
+    let wg_go_path = &config.wireguard_go_path;
+
+    // 验证 wireguard-go 可执行文件是否存在
+    if !std::path::Path::new(wg_go_path).exists() {
+        return Err(format!("wireguard-go 可执行文件不存在: {}", wg_go_path));
+    }
 
     println!(
         "启动 WireGuard 隧道: interface={}, wireguard-go={}",
@@ -167,7 +172,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
     );
 
     // 启动 wireguard-go
-    let mut child = Command::new(&wg_go_path)
+    let mut child = Command::new(wg_go_path)
         .arg("-f")
         .arg(&config.interface_name)
         .spawn()

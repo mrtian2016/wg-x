@@ -200,6 +200,7 @@ fn start_wireguard_linux_daemon(
     tunnel_id: &str,
     interface: &str,
     address: &str,
+    wireguard_go_path: &str,
 ) -> Result<ProcessHandle, String> {
     use crate::daemon_ipc::{IpcClient, PeerConfigIpc, TunnelConfigIpc};
 
@@ -230,6 +231,7 @@ fn start_wireguard_linux_daemon(
         address: address.to_string(),
         listen_port: config.listen_port,
         peers,
+        wireguard_go_path: wireguard_go_path.to_string(),
     };
 
     // 发送启动请求
@@ -1051,6 +1053,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             &tunnel_id,
             &interface_name,
             &tunnel_config.address,
+            sidecar_path_str,
         ).map_err(|e| format!("启动隧道失败: {}", e))?;
 
         // 保存进程句柄
