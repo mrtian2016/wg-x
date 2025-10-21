@@ -2,9 +2,7 @@
 
 一个基于 Tauri 2 + React 19 构建的桌面应用程序，**内置 wireguard-go**，让你无需安装额外组件即可快速建立 WireGuard 隧道，实现设备间的安全组网。同时支持多种配置格式导出，兼容标准 WireGuard、Surge、爱快、MikroTik、OpenWrt 等平台。
 
-> 🐧 **Linux 用户**: [守护进程安装指南](./INSTALL.md)
-
-![配置生成界面](./screens/iShot_2025-10-15_22.09.29.png)
+![配置生成界面](./screens/iShot_2025-10-21_23.35.10.png)
 
 
 
