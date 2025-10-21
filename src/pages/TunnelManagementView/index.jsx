@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { platform } from '@tauri-apps/plugin-os';
 import './style.css';
 
 function TunnelManagementView({ onBack, onShowToast }) {
@@ -33,7 +32,8 @@ function TunnelManagementView({ onBack, onShowToast }) {
   // 检测操作系统
   useEffect(() => {
     const checkPlatform = async () => {
-      const platformName = await platform();
+      const platformName = await invoke('get_platform');
+      console.log('当前操作系统:', platformName);
       setIsLinux(platformName === 'linux');
     };
     checkPlatform();

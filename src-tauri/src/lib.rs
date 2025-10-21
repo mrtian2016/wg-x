@@ -82,6 +82,12 @@ pub struct EnvConfig {
     pub keepalive: Option<String>,
 }
 
+// 获取操作系统信息
+#[tauri::command]
+fn get_platform() -> String {
+    std::env::consts::OS.to_string()
+}
+
 // WireGuard 密钥生成
 #[tauri::command]
 fn generate_keypair() -> Result<KeyPair, String> {
@@ -1293,6 +1299,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
+            get_platform,
             generate_keypair,
             generate_preshared_key,
             private_key_to_public,
