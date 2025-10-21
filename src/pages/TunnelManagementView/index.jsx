@@ -594,31 +594,21 @@ function TunnelManagementView({ onBack, onShowToast }) {
 
                 {/* 显示公钥 */}
                 {localPublicKey && (
-                  <div className="form-group" style={{background: '#f0f8ff', padding: '1rem', borderRadius: '8px', border: '1px solid #b3d9ff'}}>
-                    <label style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+                  <div className="form-group public-key-display">
+                    <label className="public-key-display-label">
                       <span>📢 本地公钥 (提供给对端)</span>
                       <button
                         onClick={handleCopyPublicKey}
-                        className="btn-inline"
+                        className="btn-inline public-key-display-btn"
                         type="button"
-                        style={{fontSize: '0.875rem', padding: '0.25rem 0.5rem'}}
                       >
                         📋 复制
                       </button>
                     </label>
-                    <div style={{
-                      marginTop: '0.5rem',
-                      padding: '0.75rem',
-                      background: 'white',
-                      borderRadius: '4px',
-                      fontFamily: 'monospace',
-                      fontSize: '0.875rem',
-                      wordBreak: 'break-all',
-                      border: '1px solid #dee2e6'
-                    }}>
+                    <div className="public-key-display-value">
                       {localPublicKey}
                     </div>
-                    <small style={{display: 'block', marginTop: '0.5rem', color: '#0066cc'}}>
+                    <small className="public-key-display-hint">
                       ℹ️ 对端配置 Peer 时需要使用这个公钥
                     </small>
                   </div>
@@ -670,10 +660,10 @@ function TunnelManagementView({ onBack, onShowToast }) {
 
               {/* Peer 配置 - 支持多个 */}
               <div className="config-section">
-                <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
-                  <div>
-                    <h4 style={{margin: 0}}>Peer (对端配置)</h4>
-                    <small style={{color: '#6c757d'}}>
+                <div className="peer-section-header">
+                  <div className="peer-section-header-content">
+                    <h4>Peer (对端配置)</h4>
+                    <small>
                       如果作为服务端运行，可以不添加 Peer，等待客户端连接
                     </small>
                   </div>
@@ -687,26 +677,19 @@ function TunnelManagementView({ onBack, onShowToast }) {
                 </div>
 
                 {config.peers.length === 0 ? (
-                  <div style={{padding: '2rem', textAlign: 'center', background: '#f8f9fa', borderRadius: '8px'}}>
-                    <p style={{margin: 0, color: '#6c757d'}}>暂无 Peer 配置</p>
-                    <small style={{color: '#999'}}>点击"添加 Peer"按钮添加对端配置</small>
+                  <div className="peer-empty-state">
+                    <p>暂无 Peer 配置</p>
+                    <small>点击"添加 Peer"按钮添加对端配置</small>
                   </div>
                 ) : (
                   config.peers.map((peer, index) => (
-                    <div key={index} className="peer-config-group" style={{
-                      border: '1px solid #dee2e6',
-                      borderRadius: '8px',
-                      padding: '1rem',
-                      marginBottom: '1rem',
-                      background: '#f8f9fa'
-                    }}>
-                      <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
-                        <h5 style={{margin: 0}}>Peer {index + 1}</h5>
+                    <div key={index} className="peer-config-group">
+                      <div className="peer-config-header">
+                        <h5>Peer {index + 1}</h5>
                         <button
                           onClick={() => handleRemovePeer(index)}
-                          className="btn-danger-outline"
+                          className="btn-danger-outline peer-config-delete-btn"
                           type="button"
-                          style={{padding: '0.25rem 0.5rem', fontSize: '0.875rem'}}
                         >
                           删除
                         </button>
