@@ -14,7 +14,7 @@ enum ProcessHandle {
 }
 
 impl ProcessHandle {
-    fn kill(&mut self, _tunnel_id: &str) -> Result<(), String> {
+    fn kill(&mut self, tunnel_id: &str) -> Result<(), String> {
         match self {
             ProcessHandle::StdProcess(child) => {
                 child.kill().map_err(|e| format!("杀死进程失败: {}", e))
@@ -1065,31 +1065,20 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             processes.insert(tunnel_id.clone(), process_handle);
         }
 
-        // 等待 socket 文件创建（最多等待 8 秒,Linux 需要更长时间）
-        let socket_path = format!("/var/run/wireguard/{}.sock", interface_name);
-        let mut retries = 0;
-        let max_retries = 80;
+        // 守护进程已经完成了所有配置工作（接口配置、IP地址、路由等）
+        // GUI 应用不需要再做任何配置
+        println!("隧道已通过守护进程启动并配置完成");
 
-        while retries < max_retries {
-            if std::path::Path::new(&socket_path).exists() {
-                // socket 文件已创建,额外等待权限设置完成
-                println!("socket 文件已创建,等待权限设置...");
-                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
-                break;
-            }
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-            retries += 1;
-        }
+        // 注意：在 Linux 守护进程模式下，不启动 endpoint 刷新任务
+        // 因为普通用户无法访问 root 创建的 socket
+        // 如果需要支持动态域名，应该在守护进程内部实现 endpoint 刷新逻辑
 
-        if !std::path::Path::new(&socket_path).exists() {
-            let _ = stop_tunnel(tunnel_id.clone()).await;
-            return Err(format!(
-                "wireguard-go 启动超时。socket 文件未创建: {}",
-                socket_path
-            ));
-        }
+        println!("隧道启动完成: {}", interface_name);
+        return Ok(());
     }
 
+    // macOS: 需要 GUI 应用自己配置接口（因为使用的是特权提升方式，不是守护进程）
+    #[cfg(target_os = "macos")]
     match configure_interface(interface_name.clone(), interface_config.clone()).await {
         Ok(_) => {
             println!("接口配置成功");
@@ -1280,10 +1269,30 @@ pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Res
 
     // 如果运行中,获取实时状态
     let (tx_bytes, rx_bytes, last_handshake) = if is_running {
-        let status_str = get_interface_status(interface_name)
-            .await
-            .unwrap_or_default();
-        parse_interface_status(&status_str)
+        // Linux: 通过守护进程 IPC 获取状态
+        #[cfg(target_os = "linux")]
+        {
+            use crate::daemon_ipc::IpcClient;
+            let tid = tunnel_id.clone();
+            // 使用 spawn_blocking 避免阻塞异步运行时
+            let result = tokio::task::spawn_blocking(move || {
+                IpcClient::get_tunnel_status(&tid)
+            }).await;
+
+            match result {
+                Ok(Ok(status)) => (status.tx_bytes, status.rx_bytes, status.last_handshake),
+                _ => (0, 0, None),
+            }
+        }
+
+        // macOS: 直接访问 socket
+        #[cfg(target_os = "macos")]
+        {
+            let status_str = get_interface_status(interface_name)
+                .await
+                .unwrap_or_default();
+            parse_interface_status(&status_str)
+        }
     } else {
         (0, 0, None)
     };
@@ -1575,26 +1584,56 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                         let is_running = is_in_process_list || interface_exists;
 
                         let (tx_bytes, rx_bytes, last_handshake) = if is_running {
-                            println!("获取接口 {} 状态...", interface_name);
-                            // 使用超时避免阻塞
-                            let timeout = tokio::time::Duration::from_secs(2);
-                            let status_result = tokio::time::timeout(
-                                timeout,
-                                get_interface_status(interface_name.clone())
-                            ).await;
+                            // Linux: 通过守护进程 IPC 获取状态（避免权限问题）
+                            #[cfg(target_os = "linux")]
+                            {
+                                use crate::daemon_ipc::IpcClient;
+                                println!("通过守护进程获取接口 {} 状态...", interface_name);
+                                let tunnel_id = tunnel_config.id.clone();
+                                // 使用 spawn_blocking 避免阻塞异步运行时
+                                let result = tokio::task::spawn_blocking(move || {
+                                    IpcClient::get_tunnel_status(&tunnel_id)
+                                }).await;
 
-                            match status_result {
-                                Ok(Ok(status_str)) => {
-                                    println!("获取状态成功");
-                                    parse_interface_status(&status_str)
+                                match result {
+                                    Ok(Ok(status)) => {
+                                        println!("获取状态成功");
+                                        (status.tx_bytes, status.rx_bytes, status.last_handshake)
+                                    }
+                                    Ok(Err(e)) => {
+                                        println!("获取状态失败: {}", e);
+                                        (0, 0, None)
+                                    }
+                                    Err(e) => {
+                                        println!("任务执行失败: {}", e);
+                                        (0, 0, None)
+                                    }
                                 }
-                                Ok(Err(e)) => {
-                                    println!("获取状态失败: {}", e);
-                                    (0, 0, None)
-                                }
-                                Err(_) => {
-                                    println!("获取状态超时");
-                                    (0, 0, None)
+                            }
+
+                            // macOS: 直接访问 socket（GUI 有权限）
+                            #[cfg(target_os = "macos")]
+                            {
+                                println!("获取接口 {} 状态...", interface_name);
+                                let timeout = tokio::time::Duration::from_secs(2);
+                                let status_result = tokio::time::timeout(
+                                    timeout,
+                                    get_interface_status(interface_name.clone())
+                                ).await;
+
+                                match status_result {
+                                    Ok(Ok(status_str)) => {
+                                        println!("获取状态成功");
+                                        parse_interface_status(&status_str)
+                                    }
+                                    Ok(Err(e)) => {
+                                        println!("获取状态失败: {}", e);
+                                        (0, 0, None)
+                                    }
+                                    Err(_) => {
+                                        println!("获取状态超时");
+                                        (0, 0, None)
+                                    }
                                 }
                             }
                         } else {

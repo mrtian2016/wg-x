@@ -251,7 +251,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
     }
 
     // 使用 netlink 配置 IP 地址和启动接口
-    if let Err(e) = configure_interface_ip(&config.interface_name, &config.address) {
+    if let Err(e) = configure_interface_ip(&config.interface_name, &config.address).await {
         let _ = child.kill();
         return Err(e);
     }
@@ -263,7 +263,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
                 continue; // 跳过默认路由
             }
 
-            let _ = configure_route(&config.interface_name, allowed_ip);
+            let _ = configure_route(&config.interface_name, allowed_ip).await;
         }
     }
 
@@ -308,34 +308,37 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
     uapi_config.push_str("replace_peers=true\n");
 
     // Peer 配置
-    for peer in &config.peers {
+    println!("配置 {} 个 peer(s)", config.peers.len());
+    for (i, peer) in config.peers.iter().enumerate() {
+        println!("配置 peer #{}: endpoint={:?}", i, peer.endpoint);
         let public_key_hex = base64_to_hex(&peer.public_key)?;
         uapi_config.push_str(&format!("public_key={}\n", public_key_hex));
 
         if let Some(ref endpoint) = peer.endpoint {
             if !endpoint.is_empty() {
-                // wireguard-go 的 UAPI 支持域名，但解析为 IP 更可靠
-                // 尝试解析域名，如果失败则使用原始值（可能已经是 IP）
-                match resolve_endpoint(endpoint) {
+                println!("配置 peer endpoint: {}", endpoint);
+                // wireguard-go 的 UAPI 只接受 IP 地址，必须解析域名
+                // 使用 spawn_blocking 避免在异步上下文中阻塞
+                let endpoint_clone = endpoint.clone();
+                let resolved = tokio::task::spawn_blocking(move || {
+                    resolve_endpoint_blocking(&endpoint_clone)
+                })
+                .await
+                .map_err(|e| format!("解析任务失败: {}", e))?;
+
+                match resolved {
                     Ok(resolved_endpoint) => {
-                        println!("解析 endpoint {} -> {}", endpoint, resolved_endpoint);
+                        println!("成功解析 endpoint: {} -> {}", endpoint, resolved_endpoint);
                         uapi_config.push_str(&format!("endpoint={}\n", resolved_endpoint));
                     }
                     Err(e) => {
-                        // 解析失败，尝试直接使用原始 endpoint（可能是 IP 地址格式）
-                        eprintln!("警告: 无法解析 endpoint {}: {}，尝试直接使用", endpoint, e);
-
-                        // 检查是否看起来像 IP:Port 格式
-                        if endpoint.contains(':') && endpoint.split(':').count() == 2 {
-                            println!("使用原始 endpoint: {}", endpoint);
-                            uapi_config.push_str(&format!("endpoint={}\n", endpoint));
-                        } else {
-                            // 格式不对，返回错误
-                            return Err(format!(
-                                "无法解析 endpoint {}: {}。请检查格式是否为 domain:port 或 ip:port",
-                                endpoint, e
-                            ));
-                        }
+                        // DNS 解析失败，返回错误
+                        // WireGuard UAPI 不支持域名，必须解析成功
+                        eprintln!("错误: 无法解析 endpoint {}: {}", endpoint, e);
+                        return Err(format!(
+                            "无法解析 endpoint {}: {}。请检查网络连接和 DNS 配置",
+                            endpoint, e
+                        ));
                     }
                 }
             }
@@ -508,9 +511,11 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
 
 /// 处理获取隧道状态请求
 async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value) -> IpcResponse {
+    println!("收到获取隧道状态请求: params={:?}", params);
     let tunnel_id: String = match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
         Ok(id) => id,
         Err(e) => {
+            eprintln!("解析 tunnel_id 失败: {}", e);
             return IpcResponse {
                 id: request_id,
                 result: None,
@@ -519,6 +524,7 @@ async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value)
         }
     };
 
+    println!("查询隧道状态: tunnel_id={}", tunnel_id);
     match get_tunnel_status_internal(&tunnel_id).await {
         Ok(status) => IpcResponse {
             id: request_id,
@@ -535,24 +541,49 @@ async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value)
 
 /// 内部获取隧道状态逻辑
 async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, String> {
-    let tunnels = DAEMON_TUNNELS.lock().await;
+    println!("开始获取隧道 {} 的状态", tunnel_id);
+    let socket_path = {
+        let tunnels = DAEMON_TUNNELS.lock().await;
+        println!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
 
-    if let Some(tunnel) = tunnels.get(tunnel_id) {
-        // 从 UAPI 获取统计信息，使用保存的 socket 路径
-        let (tx_bytes, rx_bytes, last_handshake) =
-            get_interface_stats(&tunnel.socket_path).unwrap_or((0, 0, None));
+        if let Some(tunnel) = tunnels.get(tunnel_id) {
+            println!("找到隧道，socket 路径: {}", tunnel.socket_path);
+            tunnel.socket_path.clone()
+        } else {
+            eprintln!("隧道 {} 未在运行列表中", tunnel_id);
+            return Err(format!("隧道 {} 未运行", tunnel_id));
+        }
+    };
 
-        Ok(TunnelStatusIpc {
-            tunnel_id: tunnel_id.to_string(),
-            status: "running".to_string(),
-            interface_name: tunnel.interface_name.clone(),
-            tx_bytes,
-            rx_bytes,
-            last_handshake,
-        })
-    } else {
-        Err(format!("隧道 {} 未运行", tunnel_id))
-    }
+    // 在阻塞线程池中获取统计信息
+    println!("准备获取接口统计信息...");
+    let socket_path_clone = socket_path.clone();
+    let (tx_bytes, rx_bytes, last_handshake) = tokio::task::spawn_blocking(move || {
+        println!("在阻塞线程中获取统计: {}", socket_path_clone);
+        get_interface_stats(&socket_path_clone)
+    })
+    .await
+    .map_err(|e| format!("获取统计任务失败: {}", e))?
+    .unwrap_or((0, 0, None));
+
+    println!("统计信息: tx={}, rx={}", tx_bytes, rx_bytes);
+
+    // 再次获取接口名称（需要重新锁定）
+    let interface_name = {
+        let tunnels = DAEMON_TUNNELS.lock().await;
+        tunnels.get(tunnel_id)
+            .map(|t| t.interface_name.clone())
+            .ok_or_else(|| "隧道已停止".to_string())?
+    };
+
+    Ok(TunnelStatusIpc {
+        tunnel_id: tunnel_id.to_string(),
+        status: "running".to_string(),
+        interface_name,
+        tx_bytes,
+        rx_bytes,
+        last_handshake,
+    })
 }
 
 /// 获取接口统计信息
@@ -560,17 +591,52 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
     use std::io::Read;
     use std::os::unix::net::UnixStream;
 
+    println!("连接到 socket: {}", socket_path);
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| format!("连接 socket {} 失败: {}", socket_path, e))?;
 
+    // 设置读取超时
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .map_err(|e| format!("设置超时失败: {}", e))?;
+
+    println!("发送 get 命令");
     stream
         .write_all(b"get=1\n\n")
         .map_err(|e| format!("发送请求失败: {}", e))?;
 
+    // 读取响应 - 读取直到遇到双换行符或超时
     let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+    let mut buffer = [0u8; 4096];
+
+    println!("开始读取响应");
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => {
+                println!("EOF");
+                break;
+            }
+            Ok(n) => {
+                response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                // WireGuard UAPI 响应以双换行符结束
+                if response.contains("\n\n") {
+                    println!("检测到双换行符，停止读取");
+                    break;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                // 超时或没有更多数据
+                if !response.is_empty() {
+                    println!("超时但已有数据，停止读取");
+                    break;
+                }
+                return Err("读取超时".to_string());
+            }
+            Err(e) => return Err(format!("读取失败: {}", e)),
+        }
+    }
+
+    println!("读取到的响应长度: {}", response.len());
 
     let mut tx_bytes = 0u64;
     let mut rx_bytes = 0u64;
@@ -628,10 +694,12 @@ fn base64_to_hex(base64_key: &str) -> Result<String, String> {
 }
 
 /// 解析 endpoint: 如果包含域名,解析为 IP 地址
-fn resolve_endpoint(endpoint: &str) -> Result<String, String> {
+/// 解析 endpoint (域名 -> IP)
+/// 注意：此函数会执行阻塞的 DNS 查询
+fn resolve_endpoint_blocking(endpoint: &str) -> Result<String, String> {
     use std::net::ToSocketAddrs;
 
-    // 尝试解析为 SocketAddr
+    // 尝试解析为 SocketAddr (这是阻塞调用)
     match endpoint.to_socket_addrs() {
         Ok(mut addrs) => {
             if let Some(addr) = addrs.next() {
@@ -684,15 +752,12 @@ fn find_wireguard_go() -> Result<String, String> {
 }
 
 /// 使用 netlink 配置接口 IP 地址和启动接口
-fn configure_interface_ip(interface: &str, address: &str) -> Result<(), String> {
+async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), String> {
     use futures::stream::TryStreamExt;
     use rtnetlink::{new_connection, IpVersion};
     use std::net::IpAddr;
 
-    // 创建 netlink 连接
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建 runtime 失败: {}", e))?;
-
-    rt.block_on(async {
+    // 在当前 async 上下文中执行，不创建新的 runtime
         let (connection, handle, _) = new_connection()
             .map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
 
@@ -748,20 +813,17 @@ fn configure_interface_ip(interface: &str, address: &str) -> Result<(), String> 
             .await
             .map_err(|e| format!("启动接口失败: {}", e))?;
 
-        println!("接口 {} 已配置地址 {} 并启动", interface, address);
-        Ok(())
-    })
+    println!("接口 {} 已配置地址 {} 并启动", interface, address);
+    Ok(())
 }
 
 /// 使用 netlink 配置路由
-fn configure_route(interface: &str, destination: &str) -> Result<(), String> {
+async fn configure_route(interface: &str, destination: &str) -> Result<(), String> {
     use futures::stream::TryStreamExt;
     use rtnetlink::new_connection;
     use std::net::IpAddr;
 
-    let rt = tokio::runtime::Runtime::new().map_err(|e| format!("创建 runtime 失败: {}", e))?;
-
-    rt.block_on(async {
+    // 在当前 async 上下文中执行，不创建新的 runtime
         let (connection, handle, _) = new_connection()
             .map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
 
@@ -814,7 +876,6 @@ fn configure_route(interface: &str, destination: &str) -> Result<(), String> {
             }
         }
 
-        println!("已添加路由: {} -> {}", destination, interface);
-        Ok(())
-    })
+    println!("已添加路由: {} -> {}", destination, interface);
+    Ok(())
 }

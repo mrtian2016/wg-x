@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import ConfirmDialog from '../../components/ConfirmDialog';
 import './style.css';
 
 function TunnelManagementView({ onBack, onShowToast }) {
@@ -15,6 +16,14 @@ function TunnelManagementView({ onBack, onShowToast }) {
   const [daemonStatus, setDaemonStatus] = useState(null);
   const [daemonLogs, setDaemonLogs] = useState('');
   const [showDaemonPanel, setShowDaemonPanel] = useState(false);
+
+  // 确认对话框状态
+  const [confirmDialog, setConfirmDialog] = useState({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {},
+  });
 
   // 配置表单状态
   const [config, setConfig] = useState({
@@ -335,20 +344,25 @@ function TunnelManagementView({ onBack, onShowToast }) {
   };
 
   // 删除隧道配置
-  const handleDeleteTunnel = async (tunnelId) => {
-    if (!confirm('确定要删除此隧道配置吗?')) {
-      return;
-    }
-    try {
-      setLoading(true);
-      await invoke('delete_tunnel_config', { tunnelId });
-      onShowToast('隧道配置已删除', 'success');
-      await loadTunnels();
-    } catch (error) {
-      onShowToast('删除配置失败: ' + error, 'error');
-    } finally {
-      setLoading(false);
-    }
+  const handleDeleteTunnel = (tunnelId) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '删除隧道',
+      message: '确定要删除此隧道配置吗?',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        try {
+          setLoading(true);
+          await invoke('delete_tunnel_config', { tunnelId });
+          onShowToast('隧道配置已删除', 'success');
+          await loadTunnels();
+        } catch (error) {
+          onShowToast('删除配置失败: ' + error, 'error');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // 查看隧道详情
@@ -390,49 +404,57 @@ function TunnelManagementView({ onBack, onShowToast }) {
   // ========== 守护进程管理函数 (仅 Linux) ==========
 
   // 安装守护进程
-  const handleInstallDaemon = async () => {
-    if (!confirm('确定要安装守护进程吗? 这需要管理员权限。')) {
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await invoke('install_daemon');
-      onShowToast(`安装成功!\n\n${result}`, 'success');
-      await loadDaemonStatus();
-    } catch (error) {
-      const errorMsg = String(error);
-      if (errorMsg.includes('取消')) {
-        onShowToast('用户取消了授权', 'warning');
-      } else {
-        onShowToast(`安装失败: ${errorMsg}`, 'error');
-      }
-    } finally {
-      setLoading(false);
-    }
+  const handleInstallDaemon = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '安装守护进程',
+      message: '确定要安装守护进程吗? 这需要管理员权限。',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        setLoading(true);
+        try {
+          const result = await invoke('install_daemon');
+          onShowToast(`安装成功!\n\n${result}`, 'success');
+          await loadDaemonStatus();
+        } catch (error) {
+          const errorMsg = String(error);
+          if (errorMsg.includes('取消')) {
+            onShowToast('用户取消了授权', 'warning');
+          } else {
+            onShowToast(`安装失败: ${errorMsg}`, 'error');
+          }
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // 卸载守护进程
-  const handleUninstallDaemon = async () => {
-    if (!confirm('确定要卸载守护进程吗? 这将停止所有隧道并删除守护进程。')) {
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const result = await invoke('uninstall_daemon');
-      onShowToast(`卸载成功!\n\n${result}`, 'success');
-      await loadDaemonStatus();
-    } catch (error) {
-      const errorMsg = String(error);
-      if (errorMsg.includes('取消')) {
-        onShowToast('用户取消了授权', 'warning');
-      } else {
-        onShowToast(`卸载失败: ${errorMsg}`, 'error');
-      }
-    } finally {
-      setLoading(false);
-    }
+  const handleUninstallDaemon = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '卸载守护进程',
+      message: '确定要卸载守护进程吗? 这将停止所有隧道并删除守护进程。',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        setLoading(true);
+        try {
+          const result = await invoke('uninstall_daemon');
+          onShowToast(`卸载成功!\n\n${result}`, 'success');
+          await loadDaemonStatus();
+        } catch (error) {
+          const errorMsg = String(error);
+          if (errorMsg.includes('取消')) {
+            onShowToast('用户取消了授权', 'warning');
+          } else {
+            onShowToast(`卸载失败: ${errorMsg}`, 'error');
+          }
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // 启动守护进程
@@ -450,21 +472,25 @@ function TunnelManagementView({ onBack, onShowToast }) {
   };
 
   // 停止守护进程
-  const handleStopDaemon = async () => {
-    if (!confirm('确定要停止守护进程吗? 这将停止所有运行中的隧道。')) {
-      return;
-    }
-
-    setLoading(true);
-    try {
-      await invoke('stop_daemon_service');
-      onShowToast('守护进程已停止', 'success');
-      await loadDaemonStatus();
-    } catch (error) {
-      onShowToast(`停止失败: ${error}`, 'error');
-    } finally {
-      setLoading(false);
-    }
+  const handleStopDaemon = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: '停止守护进程',
+      message: '确定要停止守护进程吗? 这将停止所有运行中的隧道。',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        setLoading(true);
+        try {
+          await invoke('stop_daemon_service');
+          onShowToast('守护进程已停止', 'success');
+          await loadDaemonStatus();
+        } catch (error) {
+          onShowToast(`停止失败: ${error}`, 'error');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   // 重启守护进程
@@ -1098,6 +1124,15 @@ function TunnelManagementView({ onBack, onShowToast }) {
           </div>
         </div>
       )}
+
+      {/* 确认对话框 */}
+      <ConfirmDialog
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog({ ...confirmDialog, isOpen: false })}
+      />
     </div>
   );
 }

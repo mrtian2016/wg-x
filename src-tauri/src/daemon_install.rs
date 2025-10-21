@@ -262,93 +262,177 @@ echo "✓ 守护进程已卸载"
     Ok(stdout.to_string())
 }
 
-/// 启动守护进程
+/// 辅助函数: 执行 pkexec 命令并确保环境变量正确
+fn run_pkexec_systemctl(action: &str, service: &str) -> Result<std::process::Output, std::io::Error> {
+    println!("执行 pkexec systemctl {} {}", action, service);
+
+    let mut cmd = Command::new("pkexec");
+    cmd.args(["systemctl", action, service]);
+
+    // 确保环境变量传递 (用于图形化认证对话框)
+    if let Ok(display) = std::env::var("DISPLAY") {
+        println!("设置 DISPLAY={}", display);
+        cmd.env("DISPLAY", display);
+    }
+
+    if let Ok(xauth) = std::env::var("XAUTHORITY") {
+        println!("设置 XAUTHORITY={}", xauth);
+        cmd.env("XAUTHORITY", xauth);
+    }
+
+    if let Ok(wayland) = std::env::var("WAYLAND_DISPLAY") {
+        println!("设置 WAYLAND_DISPLAY={}", wayland);
+        cmd.env("WAYLAND_DISPLAY", wayland);
+    }
+
+    println!("开始执行命令...");
+    let result = cmd.output();
+    println!("命令执行完成");
+    result
+}
+
+/// 启动守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn start_daemon_service() -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(["start", "wg-x-daemon"])
-        .output()
-        .map_err(|e| format!("启动服务失败: {}", e))?;
+    println!("start_daemon_service 被调用");
+
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let output = tokio::task::spawn_blocking(|| {
+        run_pkexec_systemctl("start", "wg-x-daemon")
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("启动服务失败: {}", e))?;
+
+    println!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
-        return Err(format!(
-            "启动服务失败: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        println!("错误输出: {}", error_msg);
+
+        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
+            return Err("用户取消了授权".to_string());
+        }
+        return Err(format!("启动服务失败: {}", error_msg));
     }
 
+    println!("守护进程启动成功");
     Ok(())
 }
 
-/// 停止守护进程
+/// 停止守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn stop_daemon_service() -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(["stop", "wg-x-daemon"])
-        .output()
-        .map_err(|e| format!("停止服务失败: {}", e))?;
+    println!("stop_daemon_service 被调用");
+
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let output = tokio::task::spawn_blocking(|| {
+        run_pkexec_systemctl("stop", "wg-x-daemon")
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("停止服务失败: {}", e))?;
+
+    println!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
-        return Err(format!(
-            "停止服务失败: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        println!("错误输出: {}", error_msg);
+
+        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
+            return Err("用户取消了授权".to_string());
+        }
+        return Err(format!("停止服务失败: {}", error_msg));
     }
 
+    println!("守护进程停止成功");
     Ok(())
 }
 
-/// 重启守护进程
+/// 重启守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn restart_daemon_service() -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(["restart", "wg-x-daemon"])
-        .output()
-        .map_err(|e| format!("重启服务失败: {}", e))?;
+    println!("restart_daemon_service 被调用");
+
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let output = tokio::task::spawn_blocking(|| {
+        run_pkexec_systemctl("restart", "wg-x-daemon")
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("重启服务失败: {}", e))?;
+
+    println!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
-        return Err(format!(
-            "重启服务失败: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        println!("错误输出: {}", error_msg);
+
+        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
+            return Err("用户取消了授权".to_string());
+        }
+        return Err(format!("重启服务失败: {}", error_msg));
     }
 
+    println!("守护进程重启成功");
     Ok(())
 }
 
-/// 启用开机自动启动
+/// 启用开机自动启动 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn enable_daemon_service() -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(["enable", "wg-x-daemon"])
-        .output()
-        .map_err(|e| format!("启用服务失败: {}", e))?;
+    println!("enable_daemon_service 被调用");
+
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let output = tokio::task::spawn_blocking(|| {
+        run_pkexec_systemctl("enable", "wg-x-daemon")
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("启用服务失败: {}", e))?;
+
+    println!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
-        return Err(format!(
-            "启用服务失败: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        println!("错误输出: {}", error_msg);
+
+        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
+            return Err("用户取消了授权".to_string());
+        }
+        return Err(format!("启用服务失败: {}", error_msg));
     }
 
+    println!("开机自启动已启用");
     Ok(())
 }
 
-/// 禁用开机自动启动
+/// 禁用开机自动启动 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn disable_daemon_service() -> Result<(), String> {
-    let output = Command::new("systemctl")
-        .args(["disable", "wg-x-daemon"])
-        .output()
-        .map_err(|e| format!("禁用服务失败: {}", e))?;
+    println!("disable_daemon_service 被调用");
+
+    // 使用 spawn_blocking 避免阻塞异步运行时
+    let output = tokio::task::spawn_blocking(|| {
+        run_pkexec_systemctl("disable", "wg-x-daemon")
+    })
+    .await
+    .map_err(|e| format!("任务执行失败: {}", e))?
+    .map_err(|e| format!("禁用服务失败: {}", e))?;
+
+    println!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
-        return Err(format!(
-            "禁用服务失败: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        let error_msg = String::from_utf8_lossy(&output.stderr);
+        println!("错误输出: {}", error_msg);
+
+        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
+            return Err("用户取消了授权".to_string());
+        }
+        return Err(format!("禁用服务失败: {}", error_msg));
     }
 
+    println!("开机自启动已禁用");
     Ok(())
 }
 
