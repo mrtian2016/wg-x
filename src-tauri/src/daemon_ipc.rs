@@ -34,6 +34,7 @@ pub struct TunnelConfigIpc {
     pub listen_port: Option<u16>,
     pub peers: Vec<PeerConfigIpc>,
     pub wireguard_go_path: String, // wireguard-go 可执行文件的完整路径
+    pub socket_dir: Option<String>, // WireGuard socket 目录 (默认 /var/run/wireguard)
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -66,6 +67,12 @@ impl IpcClient {
         let mut stream = UnixStream::connect(DAEMON_SOCKET_PATH)
             .map_err(|e| format!("无法连接到守护进程: {}。请确保守护进程正在运行 (sudo systemctl status wg-x-daemon)", e))?;
 
+        // 设置读写超时（30秒，足够启动隧道）
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+            .map_err(|e| format!("设置读取超时失败: {}", e))?;
+        stream.set_write_timeout(Some(std::time::Duration::from_secs(10)))
+            .map_err(|e| format!("设置写入超时失败: {}", e))?;
+
         // 生成请求 ID
         let request_id = uuid::Uuid::new_v4().to_string();
 
@@ -89,7 +96,7 @@ impl IpcClient {
         let mut response_data = String::new();
         stream
             .read_to_string(&mut response_data)
-            .map_err(|e| format!("读取响应失败: {}", e))?;
+            .map_err(|e| format!("读取响应失败（可能超时）: {}", e))?;
 
         // 解析响应
         let response: IpcResponse = serde_json::from_str(&response_data)

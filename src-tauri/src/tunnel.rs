@@ -233,6 +233,7 @@ fn start_wireguard_linux_daemon(
         listen_port: config.listen_port,
         peers,
         wireguard_go_path: wireguard_go_path.to_string(),
+        socket_dir: None, // 使用默认的 /var/run/wireguard
     };
 
     // 发送启动请求
