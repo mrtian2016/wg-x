@@ -250,6 +250,13 @@
   dependencies:
     "@tauri-apps/api" "^2.8.0"
 
+"@tauri-apps/plugin-os@^2.3.1":
+  version "2.3.1"
+  resolved "https://registry.npmjs.org/@tauri-apps/plugin-os/-/plugin-os-2.3.1.tgz"
+  integrity sha512-ty5V8XDUIFbSnrk3zsFoP3kzN+vAufYzalJSlmrVhQTImIZa1aL1a03bOaP2vuBvfR+WDRC6NgV2xBl8G07d+w==
+  dependencies:
+    "@tauri-apps/api" "^2.8.0"
+
 "@tauri-apps/plugin-process@~2":
   version "2.3.0"
   resolved "https://registry.npmjs.org/@tauri-apps/plugin-process/-/plugin-process-2.3.0.tgz"

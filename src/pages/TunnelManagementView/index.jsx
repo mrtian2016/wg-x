@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
+import { platform } from '@tauri-apps/plugin-os';
 import './style.css';
 
 function TunnelManagementView({ onBack, onShowToast }) {
@@ -9,6 +10,12 @@ function TunnelManagementView({ onBack, onShowToast }) {
   const [showConfigForm, setShowConfigForm] = useState(false);
   const [editingConfig, setEditingConfig] = useState(null);
   const [localPublicKey, setLocalPublicKey] = useState(''); // 本地公钥
+  const [isLinux, setIsLinux] = useState(false); // 是否为 Linux 系统
+
+  // 守护进程管理状态 (仅 Linux)
+  const [daemonStatus, setDaemonStatus] = useState(null);
+  const [daemonLogs, setDaemonLogs] = useState('');
+  const [showDaemonPanel, setShowDaemonPanel] = useState(false);
 
   // 配置表单状态
   const [config, setConfig] = useState({
@@ -23,18 +30,42 @@ function TunnelManagementView({ onBack, onShowToast }) {
     peers: [],
   });
 
+  // 检测操作系统
+  useEffect(() => {
+    const checkPlatform = async () => {
+      const platformName = await platform();
+      setIsLinux(platformName === 'linux');
+    };
+    checkPlatform();
+  }, []);
+
+  // 加载守护进程状态 (仅 Linux)
+  const loadDaemonStatus = async () => {
+    if (!isLinux) return;
+
+    try {
+      const status = await invoke('check_daemon_status');
+      setDaemonStatus(status);
+    } catch (error) {
+      console.error('获取守护进程状态失败:', error);
+    }
+  };
+
   // 加载隧道列表
   useEffect(() => {
     loadTunnels();
+    loadDaemonStatus(); // 同时加载守护进程状态
+
     // 每 2 秒刷新一次隧道状态
     // 但在配置表单打开时暂停轮询,避免 Linux 上的 UI 卡顿
     const interval = setInterval(() => {
       if (!showConfigForm) {
         loadTunnels();
+        loadDaemonStatus();
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [showConfigForm]);
+  }, [showConfigForm, isLinux]);
 
   const loadTunnels = async () => {
     // 防止重复请求(如果正在加载或表单打开,则跳过)
@@ -356,6 +387,141 @@ function TunnelManagementView({ onBack, onShowToast }) {
     return `${Math.floor(diff / 86400)} 天前`;
   };
 
+  // ========== 守护进程管理函数 (仅 Linux) ==========
+
+  // 安装守护进程
+  const handleInstallDaemon = async () => {
+    if (!confirm('确定要安装守护进程吗? 这需要管理员权限。')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await invoke('install_daemon');
+      onShowToast(`安装成功!\n\n${result}`, 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      const errorMsg = String(error);
+      if (errorMsg.includes('取消')) {
+        onShowToast('用户取消了授权', 'warning');
+      } else {
+        onShowToast(`安装失败: ${errorMsg}`, 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 卸载守护进程
+  const handleUninstallDaemon = async () => {
+    if (!confirm('确定要卸载守护进程吗? 这将停止所有隧道并删除守护进程。')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const result = await invoke('uninstall_daemon');
+      onShowToast(`卸载成功!\n\n${result}`, 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      const errorMsg = String(error);
+      if (errorMsg.includes('取消')) {
+        onShowToast('用户取消了授权', 'warning');
+      } else {
+        onShowToast(`卸载失败: ${errorMsg}`, 'error');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 启动守护进程
+  const handleStartDaemon = async () => {
+    setLoading(true);
+    try {
+      await invoke('start_daemon_service');
+      onShowToast('守护进程已启动', 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      onShowToast(`启动失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 停止守护进程
+  const handleStopDaemon = async () => {
+    if (!confirm('确定要停止守护进程吗? 这将停止所有运行中的隧道。')) {
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await invoke('stop_daemon_service');
+      onShowToast('守护进程已停止', 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      onShowToast(`停止失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 重启守护进程
+  const handleRestartDaemon = async () => {
+    setLoading(true);
+    try {
+      await invoke('restart_daemon_service');
+      onShowToast('守护进程已重启', 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      onShowToast(`重启失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 启用开机自启
+  const handleEnableDaemon = async () => {
+    setLoading(true);
+    try {
+      await invoke('enable_daemon_service');
+      onShowToast('已启用开机自启', 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      onShowToast(`启用失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 禁用开机自启
+  const handleDisableDaemon = async () => {
+    setLoading(true);
+    try {
+      await invoke('disable_daemon_service');
+      onShowToast('已禁用开机自启', 'success');
+      await loadDaemonStatus();
+    } catch (error) {
+      onShowToast(`禁用失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取守护进程日志
+  const handleViewDaemonLogs = async () => {
+    setLoading(true);
+    try {
+      const result = await invoke('get_daemon_logs', { lines: 100 });
+      setDaemonLogs(result);
+    } catch (error) {
+      onShowToast(`获取日志失败: ${error}`, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="tunnel-management-view">
 
@@ -377,7 +543,123 @@ function TunnelManagementView({ onBack, onShowToast }) {
         >
           🔄 刷新
         </button>
+        {/* Linux 守护进程管理按钮 */}
+        {isLinux && daemonStatus && (
+          <button
+            onClick={() => setShowDaemonPanel(!showDaemonPanel)}
+            className={daemonStatus.running ? "btn-success" : "btn-warning"}
+            title={daemonStatus.running ? "守护进程运行中" : "守护进程未运行"}
+          >
+            ⚙️ 守护进程 {daemonStatus.running ? '🟢' : '🔴'}
+          </button>
+        )}
       </div>
+
+      {/* Linux 守护进程管理面板 */}
+      {isLinux && showDaemonPanel && daemonStatus && (
+        <div className="daemon-panel" style={{
+          background: '#f8f9fa',
+          border: '1px solid #dee2e6',
+          borderRadius: '8px',
+          padding: '1.5rem',
+          marginBottom: '1.5rem'
+        }}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem'}}>
+            <h3 style={{margin: 0}}>Linux 守护进程管理</h3>
+            <button onClick={() => setShowDaemonPanel(false)} className="btn-close" style={{background: 'transparent', border: 'none', fontSize: '1.5rem', cursor: 'pointer'}}>
+              ✕
+            </button>
+          </div>
+
+          {/* 状态信息 */}
+          <div className="daemon-status" style={{
+            background: 'white',
+            padding: '1rem',
+            borderRadius: '6px',
+            marginBottom: '1rem',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '1rem'
+          }}>
+            <div>
+              <strong>安装状态:</strong> {daemonStatus.installed ? '✓ 已安装' : '✗ 未安装'}
+            </div>
+            <div>
+              <strong>运行状态:</strong> {daemonStatus.running ? '🟢 运行中' : '🔴 已停止'}
+            </div>
+            <div>
+              <strong>开机自启:</strong> {daemonStatus.enabled ? '✓ 已启用' : '✗ 未启用'}
+            </div>
+            {daemonStatus.version && (
+              <div>
+                <strong>版本:</strong> {daemonStatus.version}
+              </div>
+            )}
+          </div>
+
+          {/* 操作按钮 */}
+          <div className="daemon-actions">
+            {!daemonStatus.installed ? (
+              <button onClick={handleInstallDaemon} className="btn-primary" disabled={loading}>
+                📦 安装守护进程
+              </button>
+            ) : (
+              <>
+                <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginBottom: '0.5rem'}}>
+                  <button onClick={handleStartDaemon} className="btn-success" disabled={loading || daemonStatus.running}>
+                    ▶️ 启动
+                  </button>
+                  <button onClick={handleStopDaemon} className="btn-danger" disabled={loading || !daemonStatus.running}>
+                    ⏹️ 停止
+                  </button>
+                  <button onClick={handleRestartDaemon} className="btn-secondary" disabled={loading}>
+                    🔄 重启
+                  </button>
+                  <button onClick={handleViewDaemonLogs} className="btn-secondary" disabled={loading}>
+                    📋 查看日志
+                  </button>
+                </div>
+                <div style={{display: 'flex', gap: '0.5rem', flexWrap: 'wrap'}}>
+                  <button onClick={handleEnableDaemon} className="btn-secondary" disabled={loading || daemonStatus.enabled}>
+                    ✓ 启用开机自启
+                  </button>
+                  <button onClick={handleDisableDaemon} className="btn-secondary" disabled={loading || !daemonStatus.enabled}>
+                    ✗ 禁用开机自启
+                  </button>
+                  <button onClick={handleUninstallDaemon} className="btn-danger-outline" disabled={loading} style={{marginLeft: 'auto'}}>
+                    🗑️ 卸载守护进程
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* 日志显示 */}
+          {daemonLogs && (
+            <div className="daemon-logs" style={{marginTop: '1rem'}}>
+              <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem'}}>
+                <h4 style={{margin: 0}}>日志 (最近 100 行)</h4>
+                <button onClick={() => setDaemonLogs('')} className="btn-secondary" style={{fontSize: '0.875rem', padding: '0.25rem 0.5rem'}}>
+                  关闭日志
+                </button>
+              </div>
+              <pre style={{
+                background: '#000',
+                color: '#0f0',
+                padding: '1rem',
+                overflow: 'auto',
+                maxHeight: '400px',
+                fontSize: '12px',
+                fontFamily: 'monospace',
+                borderRadius: '4px',
+                margin: 0
+              }}>
+                {daemonLogs}
+              </pre>
+            </div>
+          )}
+        </div>
+      )}
 
       {tunnels.length === 0 ? (
         <div className="empty-state">

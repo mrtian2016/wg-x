@@ -15,7 +15,7 @@ enum ProcessHandle {
 }
 
 impl ProcessHandle {
-    fn kill(&mut self) -> Result<(), String> {
+    fn kill(&mut self, tunnel_id: &str) -> Result<(), String> {
         match self {
             ProcessHandle::StdProcess(child) => {
                 child.kill().map_err(|e| format!("杀死进程失败: {}", e))
@@ -26,7 +26,7 @@ impl ProcessHandle {
             }
             #[cfg(target_os = "linux")]
             ProcessHandle::PrivilegedProcess(pid) => {
-                stop_wireguard_linux(*pid)
+                stop_wireguard_linux(*pid, tunnel_id)
             }
         }
     }
@@ -192,10 +192,60 @@ fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
     Ok(())
 }
 
-// Linux: 通过 pkexec 或 sudo 获取权限并一次性完成所有配置
+// Linux: 使用守护进程方式管理 WireGuard (新方法)
+// 通过 Unix Socket 与 root 守护进程通信
+#[cfg(target_os = "linux")]
+fn start_wireguard_linux_daemon(
+    config: &InterfaceConfig,
+    tunnel_id: &str,
+    interface: &str,
+    address: &str,
+) -> Result<ProcessHandle, String> {
+    use crate::daemon_ipc::{IpcClient, PeerConfigIpc, TunnelConfigIpc};
+
+    println!("使用守护进程启动 WireGuard 隧道 (Linux)...");
+
+    // 检查守护进程是否运行
+    if !IpcClient::is_daemon_running() {
+        return Err("WireGuard 守护进程未运行。请先启动守护进程: sudo systemctl start wg-x-daemon".to_string());
+    }
+
+    // 构建 IPC 配置
+    let peers: Vec<PeerConfigIpc> = config
+        .peers
+        .iter()
+        .map(|p| PeerConfigIpc {
+            public_key: p.public_key.clone(),
+            endpoint: p.endpoint.clone(),
+            allowed_ips: p.allowed_ips.clone(),
+            persistent_keepalive: p.persistent_keepalive,
+            preshared_key: p.preshared_key.clone(),
+        })
+        .collect();
+
+    let tunnel_config = TunnelConfigIpc {
+        tunnel_id: tunnel_id.to_string(),
+        interface_name: interface.to_string(),
+        private_key: config.private_key.clone(),
+        address: address.to_string(),
+        listen_port: config.listen_port,
+        peers,
+    };
+
+    // 发送启动请求
+    IpcClient::start_tunnel(tunnel_config)?;
+
+    println!("隧道已通过守护进程启动");
+
+    // 返回一个特殊的进程句柄,表示由守护进程管理
+    // 使用 PID = -1 表示守护进程管理的隧道
+    Ok(ProcessHandle::PrivilegedProcess(-1))
+}
+
+// Linux: 通过 pkexec 或 sudo 获取权限并一次性完成所有配置(旧方法,保留作为备用)
 // pkexec 会弹出图形界面授权对话框,类似 macOS 的 osascript
 #[cfg(target_os = "linux")]
-fn start_wireguard_linux(
+fn start_wireguard_linux_legacy(
     wg_path: &str,
     interface: &str,
     address: &str,
@@ -280,9 +330,17 @@ fn start_wireguard_linux(
     Ok(ProcessHandle::PrivilegedProcess(pid))
 }
 
-// 停止 Linux 隧道
+// 停止 Linux 隧道 (守护进程方式)
 #[cfg(target_os = "linux")]
-fn stop_wireguard_linux(pid: i32) -> Result<(), String> {
+fn stop_wireguard_linux(pid: i32, tunnel_id: &str) -> Result<(), String> {
+    // 如果 PID == -1,说明是守护进程管理的隧道
+    if pid == -1 {
+        use crate::daemon_ipc::IpcClient;
+        println!("通过守护进程停止隧道: {}", tunnel_id);
+        return IpcClient::stop_tunnel(tunnel_id);
+    }
+
+    // 否则使用旧方法 (pkexec/sudo)
     println!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
 
     // 尝试使用 pkexec
@@ -985,14 +1043,14 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         }
     }
 
-    // Linux: 一次性权限请求，完成所有配置（包括路由）
+    // Linux: 使用守护进程方式管理隧道
     #[cfg(target_os = "linux")]
     {
-        let process_handle = start_wireguard_linux(
-            sidecar_path_str,
+        let process_handle = start_wireguard_linux_daemon(
+            &interface_config,
+            &tunnel_id,
             &interface_name,
             &tunnel_config.address,
-            &all_routes,
         ).map_err(|e| format!("启动隧道失败: {}", e))?;
 
         // 保存进程句柄
@@ -1067,7 +1125,7 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
         }
 
         child
-            .kill()
+            .kill(&tunnel_id)
             .map_err(|e| format!("停止隧道失败: {}", e))?;
         Ok(())
     } else {

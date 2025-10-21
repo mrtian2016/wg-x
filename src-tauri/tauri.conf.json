@@ -42,6 +42,16 @@
         "https://github.com/mrtian2016/wg-x/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1NUI3QzY3RTM0RUQwRTAKUldUZzBFN2paM3hiWld1emp5TVhIU3NBbEtveHRSc1oyR2FhTXBETUVsQUY1SDkzQndoRXRnaHAK"
+    },
+    "cli": {
+      "description": "WireGuard 隧道管理工具",
+      "longDescription": "WG-X 是一个跨平台的 WireGuard 配置生成和隧道管理工具",
+      "subcommands": {
+        "daemon": {
+          "description": "运行守护进程 (需要 root 权限, 仅 Linux)",
+          "args": []
+        }
+      }
     }
   }
 }

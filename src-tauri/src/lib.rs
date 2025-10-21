@@ -7,6 +7,7 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_cli::CliExt;
 use x25519_dalek::x25519;
 
 // WebDAV 同步模块
@@ -14,12 +15,26 @@ mod webdav;
 mod sync;
 mod tunnel;
 
+// 守护进程模块 (仅 Linux)
+#[cfg(target_os = "linux")]
+mod daemon;
+#[cfg(target_os = "linux")]
+mod daemon_ipc;
+
 use sync::{SyncManager, SyncResult};
 use webdav::{WebDavConfig, LastSyncInfo};
 use tunnel::{
     start_tunnel, stop_tunnel, get_tunnel_list, get_tunnel_details,
     save_tunnel_config, delete_tunnel_config, get_all_tunnel_configs, get_tunnel_config
 };
+
+// 导出守护进程函数供 main.rs 使用
+#[cfg(target_os = "linux")]
+pub use daemon::run_daemon;
+
+// Linux 守护进程安装/管理
+#[cfg(target_os = "linux")]
+mod daemon_install;
 // X25519 基点 (标准值)
 const X25519_BASEPOINT: [u8; 32] = [
     9, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -1238,6 +1253,7 @@ fn export_all_configs_zip(app: tauri::AppHandle, zip_path: String) -> Result<(),
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
@@ -1324,7 +1340,26 @@ pub fn run() {
             save_tunnel_config,
             delete_tunnel_config,
             get_all_tunnel_configs,
-            get_tunnel_config
+            get_tunnel_config,
+            // Linux 守护进程管理命令
+            #[cfg(target_os = "linux")]
+            daemon_install::check_daemon_status,
+            #[cfg(target_os = "linux")]
+            daemon_install::install_daemon,
+            #[cfg(target_os = "linux")]
+            daemon_install::uninstall_daemon,
+            #[cfg(target_os = "linux")]
+            daemon_install::start_daemon_service,
+            #[cfg(target_os = "linux")]
+            daemon_install::stop_daemon_service,
+            #[cfg(target_os = "linux")]
+            daemon_install::restart_daemon_service,
+            #[cfg(target_os = "linux")]
+            daemon_install::enable_daemon_service,
+            #[cfg(target_os = "linux")]
+            daemon_install::disable_daemon_service,
+            #[cfg(target_os = "linux")]
+            daemon_install::get_daemon_logs
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

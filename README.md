@@ -2,6 +2,8 @@
 
 一个基于 Tauri 2 + React 19 构建的桌面应用程序，**内置 wireguard-go**，让你无需安装额外组件即可快速建立 WireGuard 隧道，实现设备间的安全组网。同时支持多种配置格式导出，兼容标准 WireGuard、Surge、爱快、MikroTik、OpenWrt 等平台。
 
+> 🐧 **Linux 用户**: [守护进程安装指南](./INSTALL.md)
+
 ![配置生成界面](./screens/iShot_2025-10-15_22.09.29.png)
 
 
@@ -44,6 +46,26 @@
 ### 下载安装包
 
 从 [Releases](https://github.com/mrtian2016/wg-x/releases) 页面下载对应平台的安装包。
+
+#### 🐧 Linux 用户安装指南
+
+**首次使用需要安装守护进程**:
+
+1. 下载或编译 wg-x 应用
+2. 运行应用后,进入"设置"页面
+3. 点击"安装守护进程"按钮
+4. 输入管理员密码(会弹出 polkit 授权对话框)
+5. 安装完成,即可使用隧道功能
+
+**系统要求**:
+- `wireguard-go` - WireGuard 用户空间实现
+- `pkexec` (polkit) - 用于 GUI 安装授权
+- `systemd` - 守护进程管理
+
+**详细文档**: 查看 [Linux 守护进程安装指南](./INSTALL.md)
+
+> 💡 **为什么需要守护进程?**
+> Linux 下创建隧道需要 root 权限。守护进程以 root 运行并通过 systemd 管理,GUI 应用以普通用户运行,两者通过 Unix Socket 通信。这样用户无需每次都输入密码,体验更流畅。
 
 #### ⚠️ macOS 用户注意事项
 

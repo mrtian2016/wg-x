@@ -5,6 +5,7 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "cli:default",
     "opener:allow-open-url",
     "opener:allow-default-urls",
     "dialog:allow-save",
