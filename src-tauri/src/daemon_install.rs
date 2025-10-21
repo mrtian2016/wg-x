@@ -5,6 +5,7 @@ use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
+use tauri::Manager;
 
 const SYSTEMD_SERVICE_CONTENT: &str = r#"[Unit]
 Description=WireGuard X 守护进程
