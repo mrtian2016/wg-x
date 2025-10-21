@@ -218,12 +218,6 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         return Err(format!("WireGuard socket 文件未创建: {}", socket_path));
     }
 
-    // 配置接口
-    if let Err(e) = configure_interface(&config).await {
-        let _ = child.kill();
-        return Err(format!("配置接口失败: {}", e));
-    }
-
     // 配置接口 (通过 UAPI)
     if let Err(e) = configure_interface(&config).await {
         let _ = child.kill();
@@ -295,14 +289,36 @@ async fn configure_interface(config: &TunnelConfigIpc) -> Result<(), String> {
 
         if let Some(ref endpoint) = peer.endpoint {
             if !endpoint.is_empty() {
-                uapi_config.push_str(&format!("endpoint={}\n", endpoint));
+                // wireguard-go 的 UAPI 需要 IP 地址,不支持域名
+                // 在发送前解析域名为 IP 地址
+                match resolve_endpoint(endpoint) {
+                    Ok(resolved_endpoint) => {
+                        println!("解析 endpoint {} -> {}", endpoint, resolved_endpoint);
+                        uapi_config.push_str(&format!("endpoint={}\n", resolved_endpoint));
+                    }
+                    Err(e) => {
+                        return Err(format!("无法解析 endpoint {}: {}", endpoint, e));
+                    }
+                }
             }
         }
 
         if let Some(ref psk) = peer.preshared_key {
             if !psk.is_empty() {
-                let psk_hex = base64_to_hex(psk)?;
-                uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+                // 验证预共享密钥：不能和公钥相同
+                if psk == &peer.public_key {
+                    return Err("预共享密钥不能与公钥相同，请重新生成或留空".to_string());
+                }
+                // 预共享密钥也需要转换为十六进制
+                match base64_to_hex(psk) {
+                    Ok(psk_hex) => {
+                        uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
+                    }
+                    Err(e) => {
+                        println!("警告: 预共享密钥格式无效，已跳过: {}", e);
+                        // 跳过无效的预共享密钥，不影响其他配置
+                    }
+                }
             }
         }
 
@@ -317,16 +333,42 @@ async fn configure_interface(config: &TunnelConfigIpc) -> Result<(), String> {
 
     uapi_config.push_str("\n");
 
+    println!("发送 UAPI 配置:\n{}", uapi_config);
+
+    // 设置读取超时
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .map_err(|e| format!("设置超时失败: {}", e))?;
+
     // 发送配置
     stream
         .write_all(uapi_config.as_bytes())
         .map_err(|e| format!("发送配置失败: {}", e))?;
 
-    // 读取响应
+    // 读取响应 - 按块读取直到遇到双换行符
     let mut response = String::new();
-    stream
-        .read_to_string(&mut response)
-        .map_err(|e| format!("读取响应失败: {}", e))?;
+    let mut buffer = [0u8; 4096];
+
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => break, // EOF
+            Ok(n) => {
+                response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                // UAPI 响应以 errno=0 或双换行符结束
+                if response.contains("\n\n") || response.contains("errno=") {
+                    break;
+                }
+            }
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                if !response.is_empty() {
+                    break;
+                }
+                return Err("读取响应超时".to_string());
+            }
+            Err(e) => return Err(format!("读取响应失败: {}", e)),
+        }
+    }
+
+    println!("UAPI 响应:\n{}", response);
 
     if response.contains("errno=") && !response.contains("errno=0") {
         return Err(format!("配置失败: {}", response));
@@ -505,6 +547,24 @@ fn base64_to_hex(base64_key: &str) -> Result<String, String> {
     }
 
     Ok(hex::encode(&bytes))
+}
+
+/// 解析 endpoint: 如果包含域名,解析为 IP 地址
+fn resolve_endpoint(endpoint: &str) -> Result<String, String> {
+    use std::net::ToSocketAddrs;
+
+    // 尝试解析为 SocketAddr
+    match endpoint.to_socket_addrs() {
+        Ok(mut addrs) => {
+            if let Some(addr) = addrs.next() {
+                // 返回 IP:端口 格式
+                Ok(addr.to_string())
+            } else {
+                Err("无法解析域名".to_string())
+            }
+        }
+        Err(e) => Err(format!("DNS 解析失败: {}", e)),
+    }
 }
 
 /// 检查接口是否存在
