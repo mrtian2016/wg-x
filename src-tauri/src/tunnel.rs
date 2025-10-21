@@ -5,7 +5,6 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 use tauri::Manager;
 use tokio::sync::Mutex;
-use std::sync::Arc;
 
 // 进程包装器，用于统一管理不同类型的子进程
 enum ProcessHandle {
@@ -15,7 +14,7 @@ enum ProcessHandle {
 }
 
 impl ProcessHandle {
-    fn kill(&mut self, tunnel_id: &str) -> Result<(), String> {
+    fn kill(&mut self, _tunnel_id: &str) -> Result<(), String> {
         match self {
             ProcessHandle::StdProcess(child) => {
                 child.kill().map_err(|e| format!("杀死进程失败: {}", e))

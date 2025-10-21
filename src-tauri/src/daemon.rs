@@ -196,8 +196,8 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         config.interface_name, wg_go_path
     );
 
-    // 启动 wireguard-go
-    let mut child = Command::new(wg_go_path)
+    // 启动 wireguard-go (使用引用避免所有权转移)
+    let mut child = Command::new(&wg_go_path)
         .arg("-f")
         .arg(&config.interface_name)
         .spawn()

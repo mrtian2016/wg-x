@@ -7,7 +7,6 @@ use tauri::Manager;
 #[cfg(target_os = "macos")]
 use tauri::TitleBarStyle;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
-use tauri_plugin_cli::CliExt;
 use x25519_dalek::x25519;
 
 // WebDAV 同步模块
