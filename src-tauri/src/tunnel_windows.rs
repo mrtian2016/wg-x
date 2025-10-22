@@ -11,8 +11,13 @@ use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESS
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // Windows 工具函数：清理标识符
+// WireGuard 要求隧道名称必须以字母开头，只能包含字母、数字、下划线和连字符
 pub fn sanitize_identifier(input: &str) -> String {
-    let mut result = String::with_capacity(input.len());
+    let mut result = String::with_capacity(input.len() + 4); // 预留 "wgx_" 前缀空间
+
+    // 确保以字母开头，添加 "wgx_" 前缀
+    result.push_str("wgx_");
+
     for ch in input.chars() {
         if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
             result.push(ch);
@@ -20,7 +25,9 @@ pub fn sanitize_identifier(input: &str) -> String {
             result.push('_');
         }
     }
-    if result.is_empty() {
+
+    // 如果结果为空（除了前缀），使用默认名称
+    if result == "wgx_" {
         "wgx_tunnel".to_string()
     } else {
         result
@@ -178,9 +185,10 @@ pub fn start_wireguard_windows(
     log::info!("WireGuard 工具路径: {:?}", wireguard_path);
 
     let sanitized_id = sanitize_identifier(tunnel_id);
-    log::info!("清理后的 ID: {}", sanitized_id);
+    log::info!("清理后的接口名: {}", sanitized_id);
 
-    let config_file_name = format!("wgx-{}.conf", sanitized_id);
+    // 配置文件名与接口名保持一致
+    let config_file_name = format!("{}.conf", sanitized_id);
     let config_path = tunnels_dir.join(config_file_name);
     log::info!("配置文件路径: {:?}", config_path);
 
@@ -192,9 +200,9 @@ pub fn start_wireguard_windows(
     log::info!("配置文件已写入");
 
     // 启动前先尝试卸载同名服务，确保重复安装时不会失败
-    let expected_service_name = format!("WireGuardTunnel${}", sanitized_id);
-    log::info!("尝试卸载可能存在的旧服务: {}", expected_service_name);
-    let _ = stop_wireguard_windows(&expected_service_name, &sanitized_id, Some(&config_path));
+    // 服务名称直接使用 sanitized_id（不需要 WireGuardTunnel$ 前缀）
+    log::info!("尝试卸载可能存在的旧服务: {}", sanitized_id);
+    let _ = stop_wireguard_windows(&sanitized_id, &sanitized_id, Some(&config_path));
 
     log::info!("执行命令: {:?} /installtunnelservice {:?}", wireguard_path, config_path);
     let output = std::process::Command::new(&wireguard_path)
@@ -219,9 +227,8 @@ pub fn start_wireguard_windows(
         return Err(format!("安装隧道服务失败: {}", stderr.trim()));
     }
 
-    let combined = format!("{}\n{}", stdout, stderr);
-    let service_name =
-        extract_service_name_from_output(&combined).unwrap_or(expected_service_name.clone());
+    // 服务名称就是 sanitized_id
+    let service_name = sanitized_id.clone();
 
     log::info!(
         "✅ WireGuard 隧道已安装为服务: {} (配置: {:?})",
