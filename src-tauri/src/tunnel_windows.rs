@@ -396,13 +396,7 @@ fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
         }
     }
 
-    // 转换为“距今多少秒”
-    let last_handshake = last_handshake.and_then(|ts| {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
-        let now_sec = now.as_secs() as i64;
-        if now_sec >= ts { Some(now_sec - ts) } else { None }
-    });
+    
 
     (tx_total, rx_total, last_handshake)
 }
