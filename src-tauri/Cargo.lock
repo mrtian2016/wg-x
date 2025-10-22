@@ -6687,6 +6687,7 @@ dependencies = [
  "tokio",
  "url",
  "uuid",
+ "windows-sys 0.59.0",
  "x25519-dalek",
  "zip 0.6.6",
 ]

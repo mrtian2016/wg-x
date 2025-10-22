@@ -321,8 +321,8 @@ function TunnelManagementView({ onBack, onShowToast }) {
       onShowToast('隧道启动成功', 'success');
       await loadTunnels();
     } catch (error) {
-      console.error('启动隧道失败:', error);
-      onShowToast('启动隧道失败: ' + error, 'error');
+      console.error(error);
+      onShowToast(error, 'error');
     } finally {
       console.log('重置 loading 状态');
       setLoading(false);

@@ -10,27 +10,36 @@ use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESS
 // 用于隐藏控制台窗口
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-// 检查当前进程是否拥有管理员权限（Windows）
+// 检查当前进程是否已提升为管理员（使用 Windows TokenElevation 更可靠）
 fn is_windows_elevated() -> bool {
     #[cfg(target_os = "windows")]
-    {
-        // 方案：调用 whoami /groups，检测 Administrators 组 (S-1-5-32-544) 是否为 Enabled group。
-        // 注意：在 UAC 未提升的情况下，即便用户属于管理员组，该标识通常不会被启用。
-        if let Ok(output) = std::process::Command::new("whoami")
-            .arg("/groups")
-            .creation_flags(CREATE_NO_WINDOW)
-            .output()
-        {
-            if output.status.success() {
-                let text = String::from_utf8_lossy(&output.stdout);
-                // 简单匹配管理员 SID 并包含 Enabled 关键字（避免本地化影响尽量小）
-                // 仍可能受系统语言影响，但对常见英文/中文环境通常可用。
-                let has_admin_sid = text.contains("S-1-5-32-544");
-                let enabled = text.to_ascii_lowercase().contains("enabled");
-                return has_admin_sid && enabled;
-            }
+    unsafe {
+        use std::mem::{size_of, zeroed};
+        use std::ptr::null_mut;
+        use windows_sys::Win32::Foundation::CloseHandle;
+        use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
+        use windows_sys::Win32::System::Threading::GetCurrentProcess;
+        use windows_sys::Win32::Security::OpenProcessToken;
+
+        let mut token: isize = 0;
+        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
+            return false;
         }
-        false
+
+        let mut elevation: TOKEN_ELEVATION = zeroed();
+        let mut ret_len: u32 = 0;
+        let ok = GetTokenInformation(
+            token,
+            TokenElevation,
+            &mut elevation as *mut _ as *mut core::ffi::c_void,
+            size_of::<TOKEN_ELEVATION>() as u32,
+            &mut ret_len,
+        );
+        CloseHandle(token);
+        if ok == 0 {
+            return false;
+        }
+        elevation.TokenIsElevated != 0
     }
     #[cfg(not(target_os = "windows"))]
     {
