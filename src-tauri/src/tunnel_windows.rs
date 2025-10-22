@@ -193,7 +193,7 @@ pub fn start_wireguard_windows(
     log::info!("配置文件路径: {:?}", config_path);
 
     let config_content = build_windows_config_content(tunnel_config, interface_config);
-    log::debug!("生成的配置内容:\n{}", config_content);
+    log::info!("生成的配置内容:\n{}", config_content);
 
     std::fs::write(&config_path, &config_content)
         .map_err(|e| format!("写入 Windows 配置失败: {}", e))?;
@@ -368,11 +368,11 @@ fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
 }
 
 pub fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Option<i64>), String> {
-    log::debug!("获取 Windows 接口统计信息: {}", interface);
+    log::info!("获取 Windows 接口统计信息: {}", interface);
 
     let (_, wg_path) = locate_wireguard_tools()?;
-    log::debug!("wg.exe 路径: {:?}", wg_path);
-    log::debug!("执行命令: {:?} show {} dump", wg_path, interface);
+    log::info!("wg.exe 路径: {:?}", wg_path);
+    log::info!("执行命令: {:?} show {} dump", wg_path, interface);
 
     let output = std::process::Command::new(&wg_path)
         .args(["show", interface, "dump"])
@@ -380,7 +380,7 @@ pub fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Opti
         .output()
         .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
 
-    log::debug!("命令执行完成，退出码: {:?}", output.status.code());
+    log::info!("命令执行完成，退出码: {:?}", output.status.code());
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -389,10 +389,10 @@ pub fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Opti
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    log::debug!("接口 dump 输出:\n{}", stdout);
+    log::info!("接口 dump 输出:\n{}", stdout);
 
     let result = parse_windows_dump(&stdout);
-    log::debug!("解析结果: tx={}, rx={}, last_handshake={:?}", result.0, result.1, result.2);
+    log::info!("解析结果: tx={}, rx={}, last_handshake={:?}", result.0, result.1, result.2);
 
     Ok(result)
 }
