@@ -1,10 +1,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use crate::tunnel::{
-    generate_interface_name, interface_exists, InterfaceConfig, ProcessHandle, TunnelConfig,
-    TunnelStatus, TUNNEL_PROCESSES,
-};
+use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESSES};
 
 // Windows 工具函数：清理标识符
 pub fn sanitize_identifier(input: &str) -> String {

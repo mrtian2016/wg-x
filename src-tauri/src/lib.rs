@@ -64,7 +64,11 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let win_builder = win_builder.title_bar_style(TitleBarStyle::Transparent);
 
+            #[cfg(target_os = "macos")]
             let window = win_builder.build().unwrap();
+
+            #[cfg(not(target_os = "macos"))]
+            let _window = win_builder.build().unwrap();
 
             #[cfg(target_os = "macos")]
             {

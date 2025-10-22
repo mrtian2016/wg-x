@@ -127,28 +127,31 @@ pub fn interface_exists(name: &str) -> bool {
 pub fn generate_interface_name(tunnel_id: &str) -> String {
     #[cfg(target_os = "windows")]
     {
-        return crate::tunnel_windows::sanitize_identifier(tunnel_id);
+        crate::tunnel_windows::sanitize_identifier(tunnel_id)
     }
 
-    #[cfg(target_os = "macos")]
-    let prefix = "utun";
+    #[cfg(not(target_os = "windows"))]
+    {
+        #[cfg(target_os = "macos")]
+        let prefix = "utun";
 
-    #[cfg(target_os = "linux")]
-    let prefix = "tun";
+        #[cfg(target_os = "linux")]
+        let prefix = "tun";
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
-    let prefix = "wg";
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let prefix = "wg";
 
-    // 使用简单的哈希算法计算 tunnel_id 的哈希值
-    let mut hash: u32 = 0;
-    for byte in tunnel_id.bytes() {
-        hash = hash.wrapping_mul(31).wrapping_add(byte as u32);
+        // 使用简单的哈希算法计算 tunnel_id 的哈希值
+        let mut hash: u32 = 0;
+        for byte in tunnel_id.bytes() {
+            hash = hash.wrapping_mul(31).wrapping_add(byte as u32);
+        }
+
+        // 将哈希值映射到 0-99 范围内
+        let number = (hash % 100) as u32;
+
+        format!("{}{}", prefix, number)
     }
-
-    // 将哈希值映射到 0-99 范围内
-    let number = (hash % 100) as u32;
-
-    format!("{}{}", prefix, number)
 }
 
 // 将 Base64 编码的密钥转换为十六进制编码
@@ -492,18 +495,20 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
         Ok(())
     } else {
         // 即使进程不在列表中,也检查接口是否存在并尝试清理
-        let interface_name = generate_interface_name(&tunnel_id);
-        if interface_exists(&interface_name) {
-            log::info!("检测到残留接口 {},尝试清理...", interface_name);
-            cleanup_stale_tunnel(&interface_name).await?;
-            return Ok(());
-        }
-
-        // Windows 平台特殊处理
         #[cfg(target_os = "windows")]
         {
             cleanup_stale_tunnel(&tunnel_id).await?;
             return Ok(());
+        }
+
+        #[cfg(not(target_os = "windows"))]
+        {
+            let interface_name = generate_interface_name(&tunnel_id);
+            if interface_exists(&interface_name) {
+                log::info!("检测到残留接口 {},尝试清理...", interface_name);
+                cleanup_stale_tunnel(&interface_name).await?;
+                return Ok(());
+            }
         }
 
         Err("隧道未运行".to_string())
