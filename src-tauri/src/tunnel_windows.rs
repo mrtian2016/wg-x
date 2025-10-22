@@ -343,26 +343,37 @@ pub fn stop_wireguard_windows(
 fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
     let mut tx_total = 0u64;
     let mut rx_total = 0u64;
-    let mut last_handshake: Option<i64> = None;
+    let mut last_handshake: Option<i64> = None; // 暂存时间戳（秒）
 
     for line in dump.lines() {
         let cols: Vec<&str> = line.split('\t').collect();
 
         // Peer 行至少包含 7 列
+        // 5nN/lmaCqHJvMMkFKExByujxaFoPfRAcxuEE3HH2jhQ=	hQk4FrbmSeXAR/jqXG73wOLSR4ED//+QzgoY3yqx6Fo=	101.28.54.123:41803	10.0.0.0/24,192.168.216.0/24	1761148579	380	500	25
+
+
         if cols.len() >= 7 {
-            // 常见格式: public_key, preshared, endpoint, allowed_ips, tx, rx, last_handshake, [nsec], persistent
-            let tx = cols.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            // 常见格式: public_key, preshared, endpoint, allowed_ips, last_handshake, tx, rx, [nsec], persistent
+            let tx = cols.get(6).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
             let rx = cols.get(5).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
             tx_total = tx_total.saturating_add(tx);
             rx_total = rx_total.saturating_add(rx);
 
-            if let Some(sec) = cols.get(6).and_then(|v| v.parse::<i64>().ok()) {
+            if let Some(sec) = cols.get(4).and_then(|v| v.parse::<i64>().ok()) {
                 if sec > 0 {
-                    last_handshake = Some(sec);
+                    last_handshake = Some(match last_handshake { Some(prev) => prev.max(sec), None => sec });
                 }
             }
         }
     }
+
+    // 转换为“距今多少秒”
+    let last_handshake = last_handshake.and_then(|ts| {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+        let now_sec = now.as_secs() as i64;
+        if now_sec >= ts { Some(now_sec - ts) } else { None }
+    });
 
     (tx_total, rx_total, last_handshake)
 }
