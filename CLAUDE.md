@@ -119,3 +119,41 @@ fn greet(name: &str) -> String {
 1. 在 `src-tauri/src/lib.rs` 中定义命令函数并加上 `#[tauri::command]`
 2. 在 `invoke_handler` 中注册新命令：`tauri::generate_handler![greet, your_new_command]`
 3. 在前端使用 `invoke("your_new_command", { args })` 调用
+
+## 日志过滤配置
+
+日志过滤在 `src-tauri/src/lib.rs` 的 `run()` 函数中配置。当前配置：
+
+```rust
+.level(log::LevelFilter::Info)  // 全局最低日志级别：Info(过滤 Debug、Trace)
+.level_for("wg_x_lib", log::LevelFilter::Debug)  // 本应用模块允许 Debug 级别
+.level_for("tauri", log::LevelFilter::Info)  // Tauri 框架日志级别
+```
+
+### 日志级别说明
+
+- `Trace`: 最详细的日志信息（通常用于深度调试）
+- `Debug`: 调试信息
+- `Info`: 一般信息（应用启动、重要操作等）
+- `Warn`: 警告信息
+- `Error`: 错误信息
+
+### 自定义日志过滤
+
+可以为不同的模块设置不同的日志级别：
+
+```rust
+.level(log::LevelFilter::Warn)  // 全局默认为 Warn 级别
+.level_for("wg_x_lib", log::LevelFilter::Debug)  // 应用代码允许 Debug
+.level_for("tauri", log::LevelFilter::Info)  // Tauri 框架为 Info
+.level_for("tokio", log::LevelFilter::Warn)  // tokio 库为 Warn
+.level_for("reqwest", log::LevelFilter::Info)  // reqwest 库为 Info
+```
+
+### 常见的模块名称
+
+- `wg_x_lib`: 本应用（Cargo.toml 中的 lib name）
+- `tauri`: Tauri 框架
+- `tokio`: 异步运行时
+- `reqwest`: HTTP 客户端库
+- `quick_xml`: XML 解析库

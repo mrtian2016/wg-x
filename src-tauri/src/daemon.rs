@@ -29,7 +29,7 @@ struct TunnelProcess {
 
 /// 守护进程主循环
 pub async fn run_daemon() -> Result<(), String> {
-    println!("启动 wg-x 守护进程...");
+    log::info!("启动 wg-x 守护进程...");
 
     // 检查是否以 root 权限运行
     if !nix::unistd::Uid::effective().is_root() {
@@ -53,7 +53,7 @@ pub async fn run_daemon() -> Result<(), String> {
     )
     .map_err(|e| format!("设置 socket 权限失败: {}", e))?;
 
-    println!("守护进程监听在: {}", DAEMON_SOCKET_PATH);
+    log::info!("守护进程监听在: {}", DAEMON_SOCKET_PATH);
 
     // 处理连接
     for stream in listener.incoming() {
@@ -62,12 +62,12 @@ pub async fn run_daemon() -> Result<(), String> {
                 // 为每个连接创建异步任务
                 tokio::spawn(async move {
                     if let Err(e) = handle_client(stream).await {
-                        eprintln!("处理客户端请求失败: {}", e);
+                        log::error!("处理客户端请求失败: {}", e);
                     }
                 });
             }
             Err(e) => {
-                eprintln!("接受连接失败: {}", e);
+                log::error!("接受连接失败: {}", e);
             }
         }
     }
@@ -89,7 +89,7 @@ async fn handle_client(stream: UnixStream) -> Result<(), String> {
     let request: IpcRequest = serde_json::from_str(&request_line)
         .map_err(|e| format!("解析请求失败: {}", e))?;
 
-    println!("收到请求: method={}, id={}", request.method, request.id);
+    log::info!("收到请求: method={}, id={}", request.method, request.id);
 
     // 处理请求
     let response = match request.method.as_str() {
@@ -161,22 +161,22 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
 
     // 使用配置中传入的 wireguard-go 路径,如果无效则尝试查找备用路径
     let wg_go_path = if !config.wireguard_go_path.is_empty() && std::path::Path::new(&config.wireguard_go_path).exists() {
-        println!("使用应用传入的 wireguard-go 路径: {}", config.wireguard_go_path);
+        log::info!("使用应用传入的 wireguard-go 路径: {}", config.wireguard_go_path);
         config.wireguard_go_path.clone()
     } else {
-        println!("应用传入的路径无效或不存在: {}", config.wireguard_go_path);
-        println!("尝试在系统路径中查找 wireguard-go...");
+        log::warn!("应用传入的路径无效或不存在: {}", config.wireguard_go_path);
+        log::info!("尝试在系统路径中查找 wireguard-go...");
 
         // 尝试在系统路径中查找
         match find_wireguard_go() {
             Ok(path) => {
-                println!("在系统路径中找到 wireguard-go: {}", path);
+                log::info!("在系统路径中找到 wireguard-go: {}", path);
                 path
             }
             Err(e) => {
-                eprintln!("无法找到 wireguard-go 可执行文件");
-                eprintln!("应用传入的路径: {}", config.wireguard_go_path);
-                eprintln!("当前工作目录: {:?}", std::env::current_dir());
+                log::error!("无法找到 wireguard-go 可执行文件");
+                log::error!("应用传入的路径: {}", config.wireguard_go_path);
+                log::error!("当前工作目录: {:?}", std::env::current_dir());
                 return Err(format!(
                     "无法找到 wireguard-go 可执行文件。\n\
                     应用传入的路径不存在: {}\n\
@@ -191,7 +191,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         }
     };
 
-    println!(
+    log::info!(
         "启动 WireGuard 隧道: interface={}, wireguard-go={}",
         config.interface_name, wg_go_path
     );
@@ -207,7 +207,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
     let socket_dir = config.socket_dir.as_deref().unwrap_or("/var/run/wireguard");
     let socket_path = format!("{}/{}.sock", socket_dir, config.interface_name);
 
-    println!("等待 WireGuard socket 创建: {}", socket_path);
+    log::info!("等待 WireGuard socket 创建: {}", socket_path);
 
     // 等待 socket 文件创建，同时检查进程是否存活
     let mut retries = 0;
@@ -223,7 +223,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
             Ok(None) => {
                 // 进程还在运行，检查 socket 是否已创建
                 if std::path::Path::new(&socket_path).exists() {
-                    println!("Socket 文件已创建: {}", socket_path);
+                    log::info!("Socket 文件已创建: {}", socket_path);
                     break;
                 }
             }
@@ -267,7 +267,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
         }
     }
 
-    println!("隧道 {} 启动成功", config.tunnel_id);
+    log::info!("隧道 {} 启动成功", config.tunnel_id);
 
     // 保存进程信息
     tunnels.insert(
@@ -308,15 +308,15 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
     uapi_config.push_str("replace_peers=true\n");
 
     // Peer 配置
-    println!("配置 {} 个 peer(s)", config.peers.len());
+    log::info!("配置 {} 个 peer(s)", config.peers.len());
     for (i, peer) in config.peers.iter().enumerate() {
-        println!("配置 peer #{}: endpoint={:?}", i, peer.endpoint);
+        log::info!("配置 peer #{}: endpoint={:?}", i, peer.endpoint);
         let public_key_hex = base64_to_hex(&peer.public_key)?;
         uapi_config.push_str(&format!("public_key={}\n", public_key_hex));
 
         if let Some(ref endpoint) = peer.endpoint {
             if !endpoint.is_empty() {
-                println!("配置 peer endpoint: {}", endpoint);
+                log::info!("配置 peer endpoint: {}", endpoint);
                 // wireguard-go 的 UAPI 只接受 IP 地址，必须解析域名
                 // 使用 spawn_blocking 避免在异步上下文中阻塞
                 let endpoint_clone = endpoint.clone();
@@ -328,13 +328,13 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
 
                 match resolved {
                     Ok(resolved_endpoint) => {
-                        println!("成功解析 endpoint: {} -> {}", endpoint, resolved_endpoint);
+                        log::info!("成功解析 endpoint: {} -> {}", endpoint, resolved_endpoint);
                         uapi_config.push_str(&format!("endpoint={}\n", resolved_endpoint));
                     }
                     Err(e) => {
                         // DNS 解析失败，返回错误
                         // WireGuard UAPI 不支持域名，必须解析成功
-                        eprintln!("错误: 无法解析 endpoint {}: {}", endpoint, e);
+                        log::error!("错误: 无法解析 endpoint {}: {}", endpoint, e);
                         return Err(format!(
                             "无法解析 endpoint {}: {}。请检查网络连接和 DNS 配置",
                             endpoint, e
@@ -356,7 +356,7 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
                         uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
                     }
                     Err(e) => {
-                        println!("警告: 预共享密钥格式无效，已跳过: {}", e);
+                        log::warn!("警告: 预共享密钥格式无效，已跳过: {}", e);
                         // 跳过无效的预共享密钥，不影响其他配置
                     }
                 }
@@ -374,7 +374,7 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
 
     uapi_config.push_str("\n");
 
-    println!("发送 UAPI 配置:\n{}", uapi_config);
+    log::debug!("发送 UAPI 配置:\n{}", uapi_config);
 
     // 设置读取超时
     stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))
@@ -409,7 +409,7 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
         }
     }
 
-    println!("UAPI 响应:\n{}", response);
+    log::debug!("UAPI 响应:\n{}", response);
 
     if response.contains("errno=") && !response.contains("errno=0") {
         return Err(format!("配置失败: {}", response));
@@ -450,11 +450,11 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
     let mut tunnels = DAEMON_TUNNELS.lock().await;
 
     if let Some(mut tunnel) = tunnels.remove(tunnel_id) {
-        println!("停止隧道: {}", tunnel_id);
+        log::info!("停止隧道: {}", tunnel_id);
 
         // 1. 杀死 wireguard-go 进程
         if let Err(e) = tunnel.process.kill() {
-            eprintln!("警告: 杀死进程失败: {}", e);
+            log::warn!("警告: 杀死进程失败: {}", e);
         }
 
         // 2. 等待进程退出（最多等待 5 秒）
@@ -462,7 +462,7 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
         while wait_count < 50 {
             match tunnel.process.try_wait() {
                 Ok(Some(_)) => {
-                    println!("wireguard-go 进程已退出");
+                    log::info!("wireguard-go 进程已退出");
                     break;
                 }
                 Ok(None) => {
@@ -470,7 +470,7 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
                     wait_count += 1;
                 }
                 Err(e) => {
-                    eprintln!("检查进程退出状态失败: {}", e);
+                    log::error!("检查进程退出状态失败: {}", e);
                     break;
                 }
             }
@@ -478,31 +478,31 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
 
         // 如果进程仍未退出，强制 kill -9
         if wait_count >= 50 {
-            eprintln!("警告: 进程未在 5 秒内退出，尝试强制终止");
+            log::warn!("警告: 进程未在 5 秒内退出，尝试强制终止");
             let _ = tunnel.process.wait();
         }
 
         // 3. 清理网络接口（wireguard-go 正常退出时会自动清理，但以防万一）
         // 检查接口是否还存在
         if interface_exists(&tunnel.interface_name) {
-            println!("清理残留的网络接口: {}", tunnel.interface_name);
+            log::info!("清理残留的网络接口: {}", tunnel.interface_name);
             if let Err(e) = Command::new("ip")
                 .args(["link", "delete", &tunnel.interface_name])
                 .output()
             {
-                eprintln!("警告: 删除网络接口失败: {}", e);
+                log::warn!("警告: 删除网络接口失败: {}", e);
             }
         }
 
         // 4. 清理 socket 文件（通常 wireguard-go 会自动清理，但以防万一）
         if std::path::Path::new(&tunnel.socket_path).exists() {
-            println!("清理残留的 socket 文件: {}", tunnel.socket_path);
+            log::info!("清理残留的 socket 文件: {}", tunnel.socket_path);
             if let Err(e) = std::fs::remove_file(&tunnel.socket_path) {
-                eprintln!("警告: 删除 socket 文件失败: {}", e);
+                log::warn!("警告: 删除 socket 文件失败: {}", e);
             }
         }
 
-        println!("隧道 {} 已停止并清理完成", tunnel_id);
+        log::info!("隧道 {} 已停止并清理完成", tunnel_id);
         Ok(())
     } else {
         Err(format!("隧道 {} 未运行", tunnel_id))
@@ -511,11 +511,11 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
 
 /// 处理获取隧道状态请求
 async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value) -> IpcResponse {
-    println!("收到获取隧道状态请求: params={:?}", params);
+    log::info!("收到获取隧道状态请求: params={:?}", params);
     let tunnel_id: String = match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
         Ok(id) => id,
         Err(e) => {
-            eprintln!("解析 tunnel_id 失败: {}", e);
+            log::error!("解析 tunnel_id 失败: {}", e);
             return IpcResponse {
                 id: request_id,
                 result: None,
@@ -524,7 +524,7 @@ async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value)
         }
     };
 
-    println!("查询隧道状态: tunnel_id={}", tunnel_id);
+    log::info!("查询隧道状态: tunnel_id={}", tunnel_id);
     match get_tunnel_status_internal(&tunnel_id).await {
         Ok(status) => IpcResponse {
             id: request_id,
@@ -541,32 +541,32 @@ async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value)
 
 /// 内部获取隧道状态逻辑
 async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, String> {
-    println!("开始获取隧道 {} 的状态", tunnel_id);
+    log::debug!("开始获取隧道 {} 的状态", tunnel_id);
     let socket_path = {
         let tunnels = DAEMON_TUNNELS.lock().await;
-        println!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
+        log::debug!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
 
         if let Some(tunnel) = tunnels.get(tunnel_id) {
-            println!("找到隧道，socket 路径: {}", tunnel.socket_path);
+            log::debug!("找到隧道，socket 路径: {}", tunnel.socket_path);
             tunnel.socket_path.clone()
         } else {
-            eprintln!("隧道 {} 未在运行列表中", tunnel_id);
+            log::error!("隧道 {} 未在运行列表中", tunnel_id);
             return Err(format!("隧道 {} 未运行", tunnel_id));
         }
     };
 
     // 在阻塞线程池中获取统计信息
-    println!("准备获取接口统计信息...");
+    log::debug!("准备获取接口统计信息...");
     let socket_path_clone = socket_path.clone();
     let (tx_bytes, rx_bytes, last_handshake) = tokio::task::spawn_blocking(move || {
-        println!("在阻塞线程中获取统计: {}", socket_path_clone);
+        log::debug!("在阻塞线程中获取统计: {}", socket_path_clone);
         get_interface_stats(&socket_path_clone)
     })
     .await
     .map_err(|e| format!("获取统计任务失败: {}", e))?
     .unwrap_or((0, 0, None));
 
-    println!("统计信息: tx={}, rx={}", tx_bytes, rx_bytes);
+    log::debug!("统计信息: tx={}, rx={}", tx_bytes, rx_bytes);
 
     // 再次获取接口名称（需要重新锁定）
     let interface_name = {
@@ -591,7 +591,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
     use std::io::Read;
     use std::os::unix::net::UnixStream;
 
-    println!("连接到 socket: {}", socket_path);
+    log::debug!("连接到 socket: {}", socket_path);
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| format!("连接 socket {} 失败: {}", socket_path, e))?;
 
@@ -600,7 +600,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .map_err(|e| format!("设置超时失败: {}", e))?;
 
-    println!("发送 get 命令");
+    log::debug!("发送 get 命令");
     stream
         .write_all(b"get=1\n\n")
         .map_err(|e| format!("发送请求失败: {}", e))?;
@@ -609,25 +609,25 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
     let mut response = String::new();
     let mut buffer = [0u8; 4096];
 
-    println!("开始读取响应");
+    log::debug!("开始读取响应");
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
-                println!("EOF");
+                log::debug!("EOF");
                 break;
             }
             Ok(n) => {
                 response.push_str(&String::from_utf8_lossy(&buffer[..n]));
                 // WireGuard UAPI 响应以双换行符结束
                 if response.contains("\n\n") {
-                    println!("检测到双换行符，停止读取");
+                    log::debug!("检测到双换行符，停止读取");
                     break;
                 }
             }
             Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
                 // 超时或没有更多数据
                 if !response.is_empty() {
-                    println!("超时但已有数据，停止读取");
+                    log::debug!("超时但已有数据，停止读取");
                     break;
                 }
                 return Err("读取超时".to_string());
@@ -636,7 +636,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
         }
     }
 
-    println!("读取到的响应长度: {}", response.len());
+    log::debug!("读取到的响应长度: {}", response.len());
 
     let mut tx_bytes = 0u64;
     let mut rx_bytes = 0u64;
@@ -813,7 +813,7 @@ async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), St
             .await
             .map_err(|e| format!("启动接口失败: {}", e))?;
 
-    println!("接口 {} 已配置地址 {} 并启动", interface, address);
+    log::info!("接口 {} 已配置地址 {} 并启动", interface, address);
     Ok(())
 }
 
@@ -876,6 +876,6 @@ async fn configure_route(interface: &str, destination: &str) -> Result<(), Strin
             }
         }
 
-    println!("已添加路由: {} -> {}", destination, interface);
+    log::info!("已添加路由: {} -> {}", destination, interface);
     Ok(())
 }

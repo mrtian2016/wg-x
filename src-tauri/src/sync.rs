@@ -154,7 +154,7 @@ impl SyncManager {
         // 同步完成后清除删除记录
         drop(client_guard); // 释放锁
         if let Err(e) = self.clear_deletion_records().await {
-            eprintln!("清除删除记录失败: {}", e);
+            log::error!("清除删除记录失败: {}", e);
         }
 
         Ok(result)
@@ -357,9 +357,9 @@ impl SyncManager {
             // 检查是否在删除列表中
             if deleted_set.contains(filename) {
                 // 这个文件已被本地删除，同步删除到远程
-                println!("同步删除远程文件: {}", filename);
+                log::info!("同步删除远程文件: {}", filename);
                 if let Err(e) = client.delete_file(&remote_path).await {
-                    eprintln!("删除远程文件失败: {}", e);
+                    log::error!("删除远程文件失败: {}", e);
                 }
                 continue;
             }

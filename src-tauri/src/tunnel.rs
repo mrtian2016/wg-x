@@ -135,7 +135,7 @@ fn start_wireguard_macos(
         shell_script.replace('\"', "\\\"")
     );
 
-    println!("执行 AppleScript 启动隧道");
+    log::info!("执行 AppleScript 启动隧道");
 
     // 执行 osascript 来获取权限并启动进程
     let output = std::process::Command::new("osascript")
@@ -146,7 +146,7 @@ fn start_wireguard_macos(
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
-        print!("osascript 错误: {}", error_msg);
+        log::error!("osascript 错误: {}", error_msg);
         return Err(format!("权限请求失败: {}", error_msg));
     }
 
@@ -155,7 +155,7 @@ fn start_wireguard_macos(
     let pid: i32 = pid_str.trim().parse()
         .map_err(|e| format!("解析 PID 失败: {} (输出: {})", e, pid_str))?;
 
-    println!("wireguard-go 已启动，PID: {}", pid);
+    log::info!("wireguard-go 已启动，PID: {}", pid);
 
     Ok(ProcessHandle::PrivilegedProcess(pid))
 }
@@ -163,7 +163,7 @@ fn start_wireguard_macos(
 // macOS 停止 WireGuard 进程
 #[cfg(target_os = "macos")]
 fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
-    println!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
+    log::info!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
 
     // 使用 SIGKILL (-9) 确保进程被强制终止
     let shell_command = format!("/bin/kill -9 {}", pid);
@@ -187,7 +187,7 @@ fn stop_wireguard_macos(pid: i32) -> Result<(), String> {
         return Err(format!("终止进程失败: {}", error_msg));
     }
 
-    println!("隧道进程已终止");
+    log::info!("隧道进程已终止");
     Ok(())
 }
 
@@ -203,8 +203,8 @@ fn start_wireguard_linux_daemon(
 ) -> Result<ProcessHandle, String> {
     use crate::daemon_ipc::{IpcClient, PeerConfigIpc, TunnelConfigIpc};
 
-    println!("使用守护进程启动 WireGuard 隧道 (Linux)...");
-    println!("传递给守护进程的 wireguard-go 路径: {}", wireguard_go_path);
+    log::info!("使用守护进程启动 WireGuard 隧道 (Linux)...");
+    log::info!("传递给守护进程的 wireguard-go 路径: {}", wireguard_go_path);
 
     // 检查守护进程是否运行
     if !IpcClient::is_daemon_running() {
@@ -238,7 +238,7 @@ fn start_wireguard_linux_daemon(
     // 发送启动请求
     IpcClient::start_tunnel(tunnel_config)?;
 
-    println!("隧道已通过守护进程启动");
+    log::info!("隧道已通过守护进程启动");
 
     // 返回一个特殊的进程句柄,表示由守护进程管理
     // 使用 PID = -1 表示守护进程管理的隧道
@@ -254,7 +254,7 @@ fn start_wireguard_linux_legacy(
     address: &str,
     routes: &[String],
 ) -> Result<ProcessHandle, String> {
-    println!("准备启动 WireGuard 隧道 (Linux)...");
+    log::info!("准备启动 WireGuard 隧道 (Linux)...");
 
     // 获取当前用户
     let user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
@@ -287,7 +287,7 @@ fn start_wireguard_linux_legacy(
 
     shell_script.push_str(" && echo $WG_PID");
 
-    println!("执行命令脚本");
+    log::info!("执行命令脚本");
 
     // 尝试使用 pkexec (图形界面授权)
     let use_pkexec = std::process::Command::new("which")
@@ -297,7 +297,7 @@ fn start_wireguard_linux_legacy(
         .unwrap_or(false);
 
     let output = if use_pkexec {
-        println!("使用 pkexec 请求管理员权限...");
+        log::info!("使用 pkexec 请求管理员权限...");
         std::process::Command::new("pkexec")
             .arg("sh")
             .arg("-c")
@@ -305,7 +305,7 @@ fn start_wireguard_linux_legacy(
             .output()
             .map_err(|e| format!("执行命令失败: {}", e))?
     } else {
-        println!("使用 sudo 请求管理员权限(可能需要在终端输入密码)...");
+        log::info!("使用 sudo 请求管理员权限(可能需要在终端输入密码)...");
         std::process::Command::new("sudo")
             .arg("sh")
             .arg("-c")
@@ -326,7 +326,7 @@ fn start_wireguard_linux_legacy(
         .parse()
         .map_err(|e| format!("解析 PID 失败: {} (输出: {})", e, pid_str))?;
 
-    println!("wireguard-go 已启动,PID: {}", pid);
+    log::info!("wireguard-go 已启动,PID: {}", pid);
 
     // 返回包含 PID 的进程句柄
     // 注意: Linux 使用特殊的标记来表示这是通过权限提升启动的进程
@@ -339,12 +339,12 @@ fn stop_wireguard_linux(pid: i32, tunnel_id: &str) -> Result<(), String> {
     // 如果 PID == -1,说明是守护进程管理的隧道
     if pid == -1 {
         use crate::daemon_ipc::IpcClient;
-        println!("通过守护进程停止隧道: {}", tunnel_id);
+        log::info!("通过守护进程停止隧道: {}", tunnel_id);
         return IpcClient::stop_tunnel(tunnel_id);
     }
 
     // 否则使用旧方法 (pkexec/sudo)
-    println!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
+    log::info!("请求管理员权限以停止隧道进程 (PID: {})...", pid);
 
     // 尝试使用 pkexec
     let use_pkexec = std::process::Command::new("which")
@@ -596,7 +596,7 @@ pub async fn configure_interface(
                     // 在发送前解析域名为 IP 地址
                     match resolve_endpoint(&endpoint) {
                         Ok(resolved_endpoint) => {
-                            println!("解析 endpoint {} -> {}", endpoint, resolved_endpoint);
+                            log::info!("解析 endpoint {} -> {}", endpoint, resolved_endpoint);
                             uapi_config.push_str(&format!("endpoint={}\n", resolved_endpoint));
                         }
                         Err(e) => {
@@ -618,7 +618,7 @@ pub async fn configure_interface(
                             uapi_config.push_str(&format!("preshared_key={}\n", psk_hex));
                         }
                         Err(e) => {
-                            println!("警告: 预共享密钥格式无效,已跳过: {}", e);
+                            log::warn!("警告: 预共享密钥格式无效,已跳过: {}", e);
                             // 跳过无效的预共享密钥,不影响其他配置
                         }
                     }
@@ -638,7 +638,7 @@ pub async fn configure_interface(
         // 结束配置（两个换行符）
         uapi_config.push_str("\n");
 
-        println!("发送 UAPI 配置:\n{}", uapi_config);
+        log::info!("发送 UAPI 配置:\n{}", uapi_config);
 
         // 发送配置
         stream
@@ -669,7 +669,7 @@ pub async fn configure_interface(
             }
         }
 
-        println!("UAPI 响应:\n{}", response);
+        log::info!("UAPI 响应:\n{}", response);
 
         if response.contains("errno=") && !response.contains("errno=0") {
             Err(format!("配置失败: {}", response))
@@ -813,7 +813,7 @@ fn configure_routes_macos(interface: &str, allowed_ips: &[String]) -> Result<(),
     for ip in allowed_ips {
         // 跳过 0.0.0.0/0 和 ::/0 这样的全局路由,避免影响系统默认路由
         if ip == "0.0.0.0/0" || ip == "::/0" {
-            println!("跳过全局路由: {}", ip);
+            log::debug!("跳过全局路由: {}", ip);
             continue;
         }
 
@@ -840,10 +840,10 @@ fn configure_routes_macos(interface: &str, allowed_ips: &[String]) -> Result<(),
 
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            println!("添加路由失败 ({}): {}", ip, error_msg);
+            log::warn!("添加路由失败 ({}): {}", ip, error_msg);
             // 不中断流程,继续添加其他路由
         } else {
-            println!("已添加路由: {} -> {}", ip, interface);
+            log::info!("已添加路由: {} -> {}", ip, interface);
         }
     }
 
@@ -856,7 +856,7 @@ fn configure_routes_linux(interface: &str, allowed_ips: &[String]) -> Result<(),
     for ip in allowed_ips {
         // 跳过全局路由
         if ip == "0.0.0.0/0" || ip == "::/0" {
-            println!("跳过全局路由: {}", ip);
+            log::debug!("跳过全局路由: {}", ip);
             continue;
         }
 
@@ -867,9 +867,9 @@ fn configure_routes_linux(interface: &str, allowed_ips: &[String]) -> Result<(),
 
         if !output.status.success() {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            println!("添加路由失败 ({}): {}", ip, error_msg);
+            log::warn!("添加路由失败 ({}): {}", ip, error_msg);
         } else {
-            println!("已添加路由: {} -> {}", ip, interface);
+            log::info!("已添加路由: {} -> {}", ip, interface);
         }
     }
 
@@ -914,7 +914,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     // 生成接口名称
     let interface_name = generate_interface_name(&tunnel_id);
 
-    println!("interface name: {}", interface_name);
+    log::debug!("interface name: {}", interface_name);
 
     // 构建 InterfaceConfig
     let listen_port = if tunnel_config.listen_port.is_empty() {
@@ -1007,7 +1007,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         .to_str()
         .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
 
-    println!("wireguard-go 路径: {}", sidecar_path_str);
+    log::debug!("wireguard-go 路径: {}", sidecar_path_str);
 
     // macOS: 一次性权限请求，完成所有配置（包括路由）
     #[cfg(target_os = "macos")]
@@ -1067,13 +1067,13 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
 
         // 守护进程已经完成了所有配置工作（接口配置、IP地址、路由等）
         // GUI 应用不需要再做任何配置
-        println!("隧道已通过守护进程启动并配置完成");
+        log::info!("隧道已通过守护进程启动并配置完成");
 
         // 注意：在 Linux 守护进程模式下，不启动 endpoint 刷新任务
         // 因为普通用户无法访问 root 创建的 socket
         // 如果需要支持动态域名，应该在守护进程内部实现 endpoint 刷新逻辑
 
-        println!("隧道启动完成: {}", interface_name);
+        log::info!("隧道启动完成: {}", interface_name);
         return Ok(());
     }
 
@@ -1081,7 +1081,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     #[cfg(target_os = "macos")]
     match configure_interface(interface_name.clone(), interface_config.clone()).await {
         Ok(_) => {
-            println!("接口配置成功");
+            log::info!("接口配置成功");
 
             // 保存隧道配置(用于定期更新 endpoint)
             {
@@ -1091,11 +1091,11 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
 
             // 启动 endpoint 定期刷新任务(处理动态域名)
             start_endpoint_refresh_task(tunnel_id.clone(), interface_name.clone());
-            println!("已启动 endpoint 定期刷新任务");
+            log::info!("已启动 endpoint 定期刷新任务");
 
             // macOS 和 Linux: 路由和接口配置已在启动函数中完成,无需额外操作
 
-            println!("隧道启动完成: {}", interface_name);
+            log::info!("隧道启动完成: {}", interface_name);
             Ok(())
         }
         Err(e) => {
@@ -1116,7 +1116,7 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
         {
             let mut configs = TUNNEL_CONFIGS.lock().await;
             configs.remove(&tunnel_id);
-            println!("已清理隧道配置,endpoint 刷新任务将自动停止");
+            log::info!("已清理隧道配置,endpoint 刷新任务将自动停止");
         }
 
         child
@@ -1127,7 +1127,7 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
         // 即使进程不在列表中,也检查接口是否存在并尝试清理
         let interface_name = generate_interface_name(&tunnel_id);
         if interface_exists(&interface_name) {
-            println!("检测到残留接口 {},尝试清理...", interface_name);
+            log::info!("检测到残留接口 {},尝试清理...", interface_name);
 
             // 接口存在但进程不在列表中,可能是残留的接口
             // 尝试通过杀死 wireguard-go 进程来清理
@@ -1141,7 +1141,7 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
                     shell_command.replace('\"', "\\\"")
                 );
 
-                println!("请求管理员权限以停止隧道...");
+                log::info!("请求管理员权限以停止隧道...");
 
                 let output = std::process::Command::new("osascript")
                     .arg("-e")
@@ -1151,17 +1151,17 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
                 match output {
                     Ok(result) => {
                         if result.status.success() {
-                            println!("已发送终止信号给 wireguard-go 进程");
+                            log::info!("已发送终止信号给 wireguard-go 进程");
                         } else {
                             let error_msg = String::from_utf8_lossy(&result.stderr);
-                            println!("终止进程失败: {}", error_msg);
+                            log::error!("终止进程失败: {}", error_msg);
                             if error_msg.contains("User canceled") {
                                 return Err("用户取消了授权".to_string());
                             }
                         }
                     }
                     Err(e) => {
-                        println!("执行命令失败: {}", e);
+                        log::error!("执行命令失败: {}", e);
                     }
                 }
             }
@@ -1178,7 +1178,7 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
                     .map(|o| o.status.success())
                     .unwrap_or(false);
 
-                println!("请求管理员权限以停止隧道...");
+                log::info!("请求管理员权限以停止隧道...");
 
                 let output = if use_pkexec {
                     std::process::Command::new("pkexec")
@@ -1197,14 +1197,14 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
                 match output {
                     Ok(result) => {
                         if result.status.success() {
-                            println!("已发送终止信号给 wireguard-go 进程");
+                            log::info!("已发送终止信号给 wireguard-go 进程");
                         } else {
                             let error_msg = String::from_utf8_lossy(&result.stderr);
-                            println!("终止进程失败: {}", error_msg);
+                            log::error!("终止进程失败: {}", error_msg);
                         }
                     }
                     Err(e) => {
-                        println!("执行命令失败: {}", e);
+                        log::error!("执行命令失败: {}", e);
                     }
                 }
             }
@@ -1214,10 +1214,10 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
 
             // 检查接口是否已被清理
             if !interface_exists(&interface_name) {
-                println!("接口已成功清理");
+                log::info!("接口已成功清理");
                 return Ok(());
             } else {
-                println!("接口仍然存在,可能需要手动清理");
+                log::warn!("接口仍然存在,可能需要手动清理");
                 return Err(format!("已尝试清理残留接口 {},但仍然存在。请检查系统进程或重启应用", interface_name));
             }
         }
@@ -1542,10 +1542,10 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
     let tunnels_dir = app_data_dir.join("tunnels");
 
-    println!("检查隧道目录: {:?}", tunnels_dir);
+    log::debug!("检查隧道目录: {:?}", tunnels_dir);
 
     if !tunnels_dir.exists() {
-        println!("隧道目录不存在");
+        log::debug!("隧道目录不存在");
         return Ok(Vec::new());
     }
 
@@ -1564,13 +1564,13 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
     for entry in entries {
         if let Ok(entry) = entry {
             let path = entry.path();
-            // println!("检查文件: {:?}", path);
+            // log::debug!("检查文件: {:?}", path);
             if path.extension().and_then(|s| s.to_str()) == Some("json") {
                 if let Ok(content) = std::fs::read_to_string(&path) {
-                    // println!("读取配置成功,长度: {}", content.len());
+                    // log::debug!("读取配置成功,长度: {}", content.len());
                     match serde_json::from_str::<TunnelConfig>(&content) {
                         Ok(tunnel_config) => {
-                            println!("解析配置成功: id={}, name={}", tunnel_config.id, tunnel_config.name);
+                            log::debug!("解析配置成功: id={}, name={}", tunnel_config.id, tunnel_config.name);
                         let is_in_process_list = running_tunnels.contains(&tunnel_config.id);
 
                         // 生成接口名称
@@ -1588,7 +1588,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                             #[cfg(target_os = "linux")]
                             {
                                 use crate::daemon_ipc::IpcClient;
-                                println!("通过守护进程获取接口 {} 状态...", interface_name);
+                                log::debug!("通过守护进程获取接口 {} 状态...", interface_name);
                                 let tunnel_id = tunnel_config.id.clone();
                                 // 使用 spawn_blocking 避免阻塞异步运行时
                                 let result = tokio::task::spawn_blocking(move || {
@@ -1597,15 +1597,15 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
                                 match result {
                                     Ok(Ok(status)) => {
-                                        println!("获取状态成功");
+                                        log::debug!("获取状态成功");
                                         (status.tx_bytes, status.rx_bytes, status.last_handshake)
                                     }
                                     Ok(Err(e)) => {
-                                        println!("获取状态失败: {}", e);
+                                        log::warn!("获取状态失败: {}", e);
                                         (0, 0, None)
                                     }
                                     Err(e) => {
-                                        println!("任务执行失败: {}", e);
+                                        log::warn!("任务执行失败: {}", e);
                                         (0, 0, None)
                                     }
                                 }
@@ -1614,7 +1614,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                             // macOS: 直接访问 socket（GUI 有权限）
                             #[cfg(target_os = "macos")]
                             {
-                                println!("获取接口 {} 状态...", interface_name);
+                                log::debug!("获取接口 {} 状态...", interface_name);
                                 let timeout = tokio::time::Duration::from_secs(2);
                                 let status_result = tokio::time::timeout(
                                     timeout,
@@ -1623,15 +1623,15 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
                                 match status_result {
                                     Ok(Ok(status_str)) => {
-                                        println!("获取状态成功");
+                                        log::debug!("获取状态成功");
                                         parse_interface_status(&status_str)
                                     }
                                     Ok(Err(e)) => {
-                                        println!("获取状态失败: {}", e);
+                                        log::warn!("获取状态失败: {}", e);
                                         (0, 0, None)
                                     }
                                     Err(_) => {
-                                        println!("获取状态超时");
+                                        log::warn!("获取状态超时");
                                         (0, 0, None)
                                     }
                                 }
@@ -1670,21 +1670,21 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                             allowed_ips,
                         };
 
-                        // println!("添加隧道: {:?}", tunnel_status.name);
+                        // log::debug!("添加隧道: {:?}", tunnel_status.name);
                         tunnels.push(tunnel_status);
                         }
                         Err(e) => {
-                            println!("解析配置失败: {}", e);
+                            log::warn!("解析配置失败: {}", e);
                         }
                     }
                 } else {
-                    println!("读取文件失败");
+                    log::debug!("读取文件失败");
                 }
             }
         }
     }
 
-    // println!("共找到 {} 个隧道", tunnels.len());
+    // log::debug!("共找到 {} 个隧道", tunnels.len());
 
     // 按创建时间降序排序
     tunnels.sort_by(|a, b| b.id.cmp(&a.id));
@@ -1709,7 +1709,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
             let config_opt = {
                 let processes = TUNNEL_PROCESSES.lock().await;
                 if !processes.contains_key(&tunnel_id) {
-                    println!("隧道 {} 已停止,结束 endpoint 刷新任务", tunnel_id);
+                    log::info!("隧道 {} 已停止,结束 endpoint 刷新任务", tunnel_id);
                     break;
                 }
 
@@ -1720,7 +1720,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
 
             if let Some((iface, config)) = config_opt {
                 if iface != interface {
-                    println!("接口名称不匹配,跳过更新");
+                    log::debug!("接口名称不匹配,跳过更新");
                     continue;
                 }
 
@@ -1744,7 +1744,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                     }
                                 }
 
-                                println!(
+                                log::info!(
                                     "隧道 {}: endpoint {} 解析结果变化: {} -> {}",
                                     tunnel_id,
                                     original_endpoint,
@@ -1756,7 +1756,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                 let public_key_hex = match base64_to_hex(&peer.public_key) {
                                     Ok(hex) => hex,
                                     Err(e) => {
-                                        println!("解析公钥失败: {}", e);
+                                        log::error!("解析公钥失败: {}", e);
                                         continue;
                                     }
                                 };
@@ -1773,7 +1773,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                     let mut stream = match UnixStream::connect(&socket_path) {
                                         Ok(s) => s,
                                         Err(e) => {
-                                            println!("连接 socket 失败: {}", e);
+                                            log::error!("连接 socket 失败: {}", e);
                                             return Err(format!("连接失败: {}", e));
                                         }
                                     };
@@ -1800,23 +1800,23 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                 match result {
                                     Ok(Ok(response)) => {
                                         if response.contains("errno=0") || response.is_empty() {
-                                            println!("成功更新 endpoint: {}", resolved_endpoint);
+                                            log::info!("成功更新 endpoint: {}", resolved_endpoint);
                                             // 保存新的 endpoint,下次对比时使用
                                             last_resolved_endpoints.insert(peer.public_key.clone(), resolved_endpoint);
                                         } else {
-                                            println!("更新 endpoint 返回: {}", response);
+                                            log::warn!("更新 endpoint 返回: {}", response);
                                         }
                                     }
                                     Ok(Err(e)) => {
-                                        println!("更新 endpoint 失败: {}", e);
+                                        log::warn!("更新 endpoint 失败: {}", e);
                                     }
                                     Err(e) => {
-                                        println!("任务执行失败: {}", e);
+                                        log::warn!("任务执行失败: {}", e);
                                     }
                                 }
                             }
                             Err(e) => {
-                                println!("解析 endpoint {} 失败: {}", original_endpoint, e);
+                                log::warn!("解析 endpoint {} 失败: {}", original_endpoint, e);
                             }
                         }
                     }

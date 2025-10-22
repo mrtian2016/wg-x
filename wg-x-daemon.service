@@ -1,5 +1,5 @@
 [Unit]
-Description=WireGuard X 守护进程
+Description=WireGuard X Daemon
 Documentation=https://github.com/your-repo/wg-x
 After=network.target
 

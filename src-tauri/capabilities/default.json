@@ -15,6 +15,7 @@
     "process:allow-restart",
     "shell:allow-execute",
     "shell:allow-open",
+    "log:default",
     {
       "identifier": "shell:allow-execute",
       "allow": [

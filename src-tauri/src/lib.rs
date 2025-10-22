@@ -8,12 +8,11 @@ use tauri::Manager;
 use tauri::TitleBarStyle;
 use tauri::{WebviewUrl, WebviewWindowBuilder};
 use x25519_dalek::x25519;
-
 // WebDAV 同步模块
 mod webdav;
 mod sync;
 mod tunnel;
-
+use tauri_plugin_log::{Target, TargetKind};
 // 守护进程模块 (仅 Linux)
 #[cfg(target_os = "linux")]
 mod daemon;
@@ -90,6 +89,8 @@ fn get_platform() -> String {
 // WireGuard 密钥生成
 #[tauri::command]
 fn generate_keypair() -> Result<KeyPair, String> {
+    log::info!("开始生成 WireGuard 密钥对");
+
     // 生成 32 字节随机私钥
     let mut private_bytes = [0u8; 32];
     rand::thread_rng().fill_bytes(&mut private_bytes);
@@ -103,6 +104,8 @@ fn generate_keypair() -> Result<KeyPair, String> {
     // 使用 x25519 函数从私钥和基点计算公钥
     let public_bytes = x25519(private_bytes, X25519_BASEPOINT);
     let public_key = BASE64.encode(&public_bytes);
+
+    log::info!("WireGuard 密钥对生成成功");
 
     Ok(KeyPair {
         private_key,
@@ -598,20 +601,35 @@ fn save_config_to_path(content: String, file_path: String) -> Result<(), String>
 // 保存配置到历史记录
 #[tauri::command]
 fn save_to_history(app: tauri::AppHandle, entry: HistoryEntry) -> Result<(), String> {
+    log::info!("保存历史记录: id={}, interface_name={}", entry.id, entry.interface_name);
+
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("获取应用数据目录失败: {}", e);
+            format!("获取应用数据目录失败: {}", e)
+        })?;
 
     let history_dir = app_data_dir.join("history");
-    fs::create_dir_all(&history_dir).map_err(|e| format!("创建历史目录失败: {}", e))?;
+    fs::create_dir_all(&history_dir).map_err(|e| {
+        log::error!("创建历史目录失败: {}", e);
+        format!("创建历史目录失败: {}", e)
+    })?;
 
     let file_path = history_dir.join(format!("{}.json", entry.id));
     let json =
-        serde_json::to_string_pretty(&entry).map_err(|e| format!("序列化历史记录失败: {}", e))?;
+        serde_json::to_string_pretty(&entry).map_err(|e| {
+            log::error!("序列化历史记录失败: {}", e);
+            format!("序列化历史记录失败: {}", e)
+        })?;
 
-    fs::write(&file_path, json).map_err(|e| format!("保存历史记录失败: {}", e))?;
+    fs::write(&file_path, json).map_err(|e| {
+        log::error!("保存历史记录失败: {}", e);
+        format!("保存历史记录失败: {}", e)
+    })?;
 
+    log::info!("历史记录保存成功: {}", entry.id);
     Ok(())
 }
 
@@ -701,7 +719,7 @@ async fn delete_history(app: tauri::AppHandle, id: String) -> Result<(), String>
         // 记录删除操作，以便同步时删除远程文件
         let manager = SyncManager::new(app_data_dir);
         if let Err(e) = manager.record_deletion("history", &filename).await {
-            eprintln!("记录删除操作失败: {}", e);
+            log::error!("记录删除操作失败: {}", e);
         }
     }
 
@@ -728,7 +746,7 @@ async fn clear_all_history(app: tauri::AppHandle) -> Result<(), String> {
                     if filename.ends_with(".json") {
                         // 记录每个文件的删除
                         if let Err(e) = manager.record_deletion("history", filename).await {
-                            eprintln!("记录删除操作失败: {}", e);
+                            log::error!("记录删除操作失败: {}", e);
                         }
                     }
                 }
@@ -825,20 +843,35 @@ fn migrate_old_config_to_server(app: tauri::AppHandle) -> Result<Option<String>,
 // 保存服务端配置（新建或更新）
 #[tauri::command]
 fn save_server_config(app: tauri::AppHandle, config: ServerConfig) -> Result<(), String> {
+    log::info!("保存服务端配置: id={}, name={}", config.id, config.name);
+
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("获取应用数据目录失败: {}", e);
+            format!("获取应用数据目录失败: {}", e)
+        })?;
 
     let servers_dir = app_data_dir.join("servers");
-    fs::create_dir_all(&servers_dir).map_err(|e| format!("创建服务端目录失败: {}", e))?;
+    fs::create_dir_all(&servers_dir).map_err(|e| {
+        log::error!("创建服务端目录失败: {}", e);
+        format!("创建服务端目录失败: {}", e)
+    })?;
 
     let file_path = servers_dir.join(format!("{}.json", config.id));
     let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("序列化服务端配置失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("序列化服务端配置失败: {}", e);
+            format!("序列化服务端配置失败: {}", e)
+        })?;
 
-    fs::write(&file_path, json).map_err(|e| format!("保存服务端配置失败: {}", e))?;
+    fs::write(&file_path, json).map_err(|e| {
+        log::error!("保存服务端配置失败: {}", e);
+        format!("保存服务端配置失败: {}", e)
+    })?;
 
+    log::info!("服务端配置保存成功: {}", config.id);
     Ok(())
 }
 
@@ -919,7 +952,7 @@ async fn delete_server(app: tauri::AppHandle, id: String) -> Result<(), String> 
         // 记录删除操作，以便同步时删除远程文件
         let manager = SyncManager::new(app_data_dir);
         if let Err(e) = manager.record_deletion("servers", &filename).await {
-            eprintln!("记录删除操作失败: {}", e);
+            log::error!("记录删除操作失败: {}", e);
         }
     }
 
@@ -946,7 +979,7 @@ async fn clear_all_servers(app: tauri::AppHandle) -> Result<(), String> {
                     if filename.ends_with(".json") {
                         // 记录每个文件的删除
                         if let Err(e) = manager.record_deletion("servers", filename).await {
-                            eprintln!("记录删除操作失败: {}", e);
+                            log::error!("记录删除操作失败: {}", e);
                         }
                     }
                 }
@@ -1006,41 +1039,69 @@ fn get_history_list_by_server(
 // 保存 WebDAV 配置
 #[tauri::command]
 fn save_webdav_config(app: tauri::AppHandle, config: WebDavConfig) -> Result<(), String> {
+    log::info!("保存 WebDAV 配置: enabled={}, url={}", config.enabled, config.server_url);
+
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("获取应用数据目录失败: {}", e);
+            format!("获取应用数据目录失败: {}", e)
+        })?;
 
-    fs::create_dir_all(&app_data_dir).map_err(|e| format!("创建应用数据目录失败: {}", e))?;
+    fs::create_dir_all(&app_data_dir).map_err(|e| {
+        log::error!("创建应用数据目录失败: {}", e);
+        format!("创建应用数据目录失败: {}", e)
+    })?;
 
     let config_path = app_data_dir.join("webdav.json");
     let json =
-        serde_json::to_string_pretty(&config).map_err(|e| format!("序列化配置失败: {}", e))?;
+        serde_json::to_string_pretty(&config).map_err(|e| {
+            log::error!("序列化 WebDAV 配置失败: {}", e);
+            format!("序列化配置失败: {}", e)
+        })?;
 
-    fs::write(&config_path, json).map_err(|e| format!("保存配置失败: {}", e))?;
+    fs::write(&config_path, json).map_err(|e| {
+        log::error!("保存 WebDAV 配置失败: {}", e);
+        format!("保存配置失败: {}", e)
+    })?;
 
+    log::info!("WebDAV 配置保存成功");
     Ok(())
 }
 
 // 加载 WebDAV 配置
 #[tauri::command]
 fn load_webdav_config(app: tauri::AppHandle) -> Result<WebDavConfig, String> {
+    log::info!("加载 WebDAV 配置");
+
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("获取应用数据目录失败: {}", e);
+            format!("获取应用数据目录失败: {}", e)
+        })?;
 
     let config_path = app_data_dir.join("webdav.json");
 
     if !config_path.exists() {
+        log::info!("WebDAV 配置文件不存在，使用默认配置");
         return Ok(WebDavConfig::default());
     }
 
-    let content = fs::read_to_string(&config_path).map_err(|e| format!("读取配置失败: {}", e))?;
+    let content = fs::read_to_string(&config_path).map_err(|e| {
+        log::error!("读取 WebDAV 配置失败: {}", e);
+        format!("读取配置失败: {}", e)
+    })?;
 
     let config: WebDavConfig =
-        serde_json::from_str(&content).map_err(|e| format!("解析配置失败: {}", e))?;
+        serde_json::from_str(&content).map_err(|e| {
+            log::error!("解析 WebDAV 配置失败: {}", e);
+            format!("解析配置失败: {}", e)
+        })?;
 
+    log::info!("WebDAV 配置加载成功: enabled={}", config.enabled);
     Ok(config)
 }
 
@@ -1092,20 +1153,30 @@ async fn sync_from_webdav(app: tauri::AppHandle) -> Result<SyncResult, String> {
 // 双向智能同步
 #[tauri::command]
 async fn sync_bidirectional_webdav(app: tauri::AppHandle) -> Result<SyncResult, String> {
+    log::info!("开始双向 WebDAV 同步");
+
     let app_data_dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+        .map_err(|e| {
+            log::error!("获取应用数据目录失败: {}", e);
+            format!("获取应用数据目录失败: {}", e)
+        })?;
 
     let config = load_webdav_config(app.clone())?;
 
     if !config.enabled {
+        log::warn!("WebDAV 同步未启用");
         return Err("WebDAV 同步未启用".to_string());
     }
 
     let manager = SyncManager::new(app_data_dir);
     manager.init_client(config).await?;
     let result = manager.sync_bidirectional().await?;
+
+    log::info!("双向同步完成: 服务端上传={}, 服务端下载={}, 历史上传={}, 历史下载={}",
+        result.servers_uploaded, result.servers_downloaded,
+        result.history_uploaded, result.history_downloaded);
 
     // 保存同步信息
     let sync_info = LastSyncInfo {
@@ -1121,7 +1192,7 @@ async fn sync_bidirectional_webdav(app: tauri::AppHandle) -> Result<SyncResult, 
     };
 
     if let Err(e) = save_last_sync_info(app, sync_info) {
-        eprintln!("保存同步信息失败: {}", e);
+        log::error!("保存同步信息失败: {}", e);
     }
 
     Ok(result)
@@ -1257,12 +1328,34 @@ fn export_all_configs_zip(app: tauri::AppHandle, zip_path: String) -> Result<(),
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+
     tauri::Builder::default()
+       .plugin(
+            tauri_plugin_log::Builder::new()
+                .targets([
+                    Target::new(TargetKind::Stdout),
+                    Target::new(TargetKind::LogDir { file_name: None }),
+                    Target::new(TargetKind::Webview),
+                ])
+                // 日志过滤配置
+                .level(log::LevelFilter::Info)  // 全局最低日志级别：Info(过滤 Debug、Trace)
+                // .level_for("wg_x_lib", log::LevelFilter::Debug)  // 本应用模块允许 Debug 级别
+                // .level_for("tauri", log::LevelFilter::Info)  // Tauri 框架日志级别
+                .build(),
+        )
         .plugin(tauri_plugin_cli::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            
+
+            log::info!("========== WG-X 应用启动 ==========");
+            log::info!("平台: {}", std::env::consts::OS);
+            log::info!("应用数据目录: {:?}", app.path().app_data_dir());
+            log::info!("应用日志目录: {:?}", app.path().app_log_dir());
+            log::info!("=====================================");
+
             let win_builder = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("")
                 .fullscreen(false)
@@ -1367,8 +1460,17 @@ pub fn run() {
             #[cfg(target_os = "linux")]
             daemon_install::get_daemon_logs
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            match event {
+                tauri::RunEvent::Exit => {
+                    log::info!("========== WG-X 应用关闭 ==========");
+                    log::info!("=====================================");
+                }
+                _ => {}
+            }
+        });
 }
 
 #[cfg(test)]
@@ -1382,8 +1484,8 @@ mod tests {
 
         let keypair = result.unwrap();
 
-        println!("私钥: {}", keypair.private_key);
-        println!("公钥: {}", keypair.public_key);
+        eprintln!("私钥: {}", keypair.private_key);
+        eprintln!("公钥: {}", keypair.public_key);
 
         // 验证私钥和公钥不相同
         assert_ne!(
@@ -1401,8 +1503,8 @@ mod tests {
         let keypair = generate_keypair().unwrap();
         let computed_public = private_key_to_public(keypair.private_key.clone()).unwrap();
 
-        println!("原始公钥: {}", keypair.public_key);
-        println!("计算公钥: {}", computed_public);
+        eprintln!("原始公钥: {}", keypair.public_key);
+        eprintln!("计算公钥: {}", computed_public);
 
         assert_eq!(keypair.public_key, computed_public, "公钥应该一致");
     }
