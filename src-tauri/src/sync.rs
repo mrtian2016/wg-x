@@ -203,8 +203,7 @@ impl SyncManager {
             .await
             .map_err(|e| format!("读取删除记录失败: {}", e))?;
 
-        serde_json::from_str(&content)
-            .map_err(|e| format!("解析删除记录失败: {}", e))
+        serde_json::from_str(&content).map_err(|e| format!("解析删除记录失败: {}", e))
     }
 
     /// 保存删除追踪文件
@@ -318,7 +317,8 @@ impl SyncManager {
                     if filename.ends_with(".json") {
                         if let Ok(metadata) = tokio::fs::metadata(&path).await {
                             if let Ok(modified) = metadata.modified() {
-                                if let Ok(timestamp) = modified.duration_since(std::time::UNIX_EPOCH)
+                                if let Ok(timestamp) =
+                                    modified.duration_since(std::time::UNIX_EPOCH)
                                 {
                                     local_files
                                         .insert(filename.to_string(), timestamp.as_secs() as i64);

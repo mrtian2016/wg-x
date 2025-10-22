@@ -97,12 +97,10 @@ pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
 #[tauri::command]
 pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
     // 获取当前可执行文件路径
-    let current_exe = std::env::current_exe()
-        .map_err(|e| format!("获取当前执行文件路径失败: {}", e))?;
+    let current_exe =
+        std::env::current_exe().map_err(|e| format!("获取当前执行文件路径失败: {}", e))?;
 
-    let current_exe_str = current_exe
-        .to_str()
-        .ok_or("无效的可执行文件路径")?;
+    let current_exe_str = current_exe.to_str().ok_or("无效的可执行文件路径")?;
 
     // 获取 wireguard-go sidecar 的路径
     let sidecar_path = app
@@ -164,8 +162,7 @@ fi
 
     // 写入临时脚本
     let script_path = "/tmp/wg-x-install-daemon.sh";
-    fs::write(script_path, script_content)
-        .map_err(|e| format!("创建安装脚本失败: {}", e))?;
+    fs::write(script_path, script_content).map_err(|e| format!("创建安装脚本失败: {}", e))?;
 
     // 设置执行权限
     fs::set_permissions(script_path, fs::Permissions::from_mode(0o755))
@@ -232,8 +229,7 @@ echo "✓ 守护进程已卸载"
 
     // 写入临时脚本
     let script_path = "/tmp/wg-x-uninstall-daemon.sh";
-    fs::write(script_path, script_content)
-        .map_err(|e| format!("创建卸载脚本失败: {}", e))?;
+    fs::write(script_path, script_content).map_err(|e| format!("创建卸载脚本失败: {}", e))?;
 
     fs::set_permissions(script_path, fs::Permissions::from_mode(0o755))
         .map_err(|e| format!("设置脚本权限失败: {}", e))?;
@@ -263,7 +259,10 @@ echo "✓ 守护进程已卸载"
 }
 
 /// 辅助函数: 执行 pkexec 命令并确保环境变量正确
-fn run_pkexec_systemctl(action: &str, service: &str) -> Result<std::process::Output, std::io::Error> {
+fn run_pkexec_systemctl(
+    action: &str,
+    service: &str,
+) -> Result<std::process::Output, std::io::Error> {
     log::debug!("执行 pkexec systemctl {} {}", action, service);
 
     let mut cmd = Command::new("pkexec");
@@ -297,12 +296,10 @@ pub async fn start_daemon_service() -> Result<(), String> {
     log::debug!("start_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| {
-        run_pkexec_systemctl("start", "wg-x-daemon")
-    })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("启动服务失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("start", "wg-x-daemon"))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("启动服务失败: {}", e))?;
 
     log::debug!("命令执行结果: status={:?}", output.status);
 
@@ -326,12 +323,10 @@ pub async fn stop_daemon_service() -> Result<(), String> {
     log::debug!("stop_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| {
-        run_pkexec_systemctl("stop", "wg-x-daemon")
-    })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("停止服务失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("stop", "wg-x-daemon"))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("停止服务失败: {}", e))?;
 
     log::debug!("命令执行结果: status={:?}", output.status);
 
@@ -355,12 +350,10 @@ pub async fn restart_daemon_service() -> Result<(), String> {
     log::debug!("restart_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| {
-        run_pkexec_systemctl("restart", "wg-x-daemon")
-    })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("重启服务失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("restart", "wg-x-daemon"))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("重启服务失败: {}", e))?;
 
     log::debug!("命令执行结果: status={:?}", output.status);
 
@@ -384,12 +377,10 @@ pub async fn enable_daemon_service() -> Result<(), String> {
     log::debug!("enable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| {
-        run_pkexec_systemctl("enable", "wg-x-daemon")
-    })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("启用服务失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("enable", "wg-x-daemon"))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("启用服务失败: {}", e))?;
 
     log::debug!("命令执行结果: status={:?}", output.status);
 
@@ -413,12 +404,10 @@ pub async fn disable_daemon_service() -> Result<(), String> {
     log::debug!("disable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| {
-        run_pkexec_systemctl("disable", "wg-x-daemon")
-    })
-    .await
-    .map_err(|e| format!("任务执行失败: {}", e))?
-    .map_err(|e| format!("禁用服务失败: {}", e))?;
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("disable", "wg-x-daemon"))
+        .await
+        .map_err(|e| format!("任务执行失败: {}", e))?
+        .map_err(|e| format!("禁用服务失败: {}", e))?;
 
     log::debug!("命令执行结果: status={:?}", output.status);
 

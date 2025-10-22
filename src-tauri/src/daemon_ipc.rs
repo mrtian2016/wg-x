@@ -33,7 +33,7 @@ pub struct TunnelConfigIpc {
     pub address: String,
     pub listen_port: Option<u16>,
     pub peers: Vec<PeerConfigIpc>,
-    pub wireguard_go_path: String, // wireguard-go 可执行文件的完整路径
+    pub wireguard_go_path: String,  // wireguard-go 可执行文件的完整路径
     pub socket_dir: Option<String>, // WireGuard socket 目录 (默认 /var/run/wireguard)
 }
 
@@ -68,9 +68,11 @@ impl IpcClient {
             .map_err(|e| format!("无法连接到守护进程: {}。请确保守护进程正在运行 (sudo systemctl status wg-x-daemon)", e))?;
 
         // 设置读写超时（30秒，足够启动隧道）
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(30)))
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(30)))
             .map_err(|e| format!("设置读取超时失败: {}", e))?;
-        stream.set_write_timeout(Some(std::time::Duration::from_secs(10)))
+        stream
+            .set_write_timeout(Some(std::time::Duration::from_secs(10)))
             .map_err(|e| format!("设置写入超时失败: {}", e))?;
 
         // 生成请求 ID
@@ -84,8 +86,8 @@ impl IpcClient {
         };
 
         // 序列化请求
-        let request_json = serde_json::to_string(&request)
-            .map_err(|e| format!("序列化请求失败: {}", e))?;
+        let request_json =
+            serde_json::to_string(&request).map_err(|e| format!("序列化请求失败: {}", e))?;
 
         // 发送请求 (加上换行符作为消息边界)
         stream
@@ -99,8 +101,8 @@ impl IpcClient {
             .map_err(|e| format!("读取响应失败（可能超时）: {}", e))?;
 
         // 解析响应
-        let response: IpcResponse = serde_json::from_str(&response_data)
-            .map_err(|e| format!("解析响应失败: {}", e))?;
+        let response: IpcResponse =
+            serde_json::from_str(&response_data).map_err(|e| format!("解析响应失败: {}", e))?;
 
         // 检查响应 ID 是否匹配
         if response.id != request_id {
@@ -112,8 +114,7 @@ impl IpcClient {
 
     /// 启动隧道
     pub fn start_tunnel(config: TunnelConfigIpc) -> Result<(), String> {
-        let params = serde_json::to_value(&config)
-            .map_err(|e| format!("序列化配置失败: {}", e))?;
+        let params = serde_json::to_value(&config).map_err(|e| format!("序列化配置失败: {}", e))?;
 
         let response = Self::send_request("start_tunnel", params)?;
 
@@ -146,8 +147,8 @@ impl IpcClient {
         }
 
         let result = response.result.ok_or("响应缺少结果")?;
-        let status: TunnelStatusIpc = serde_json::from_value(result)
-            .map_err(|e| format!("解析状态失败: {}", e))?;
+        let status: TunnelStatusIpc =
+            serde_json::from_value(result).map_err(|e| format!("解析状态失败: {}", e))?;
 
         Ok(status)
     }
@@ -162,8 +163,8 @@ impl IpcClient {
         }
 
         let result = response.result.ok_or("响应缺少结果")?;
-        let tunnel_ids: Vec<String> = serde_json::from_value(result)
-            .map_err(|e| format!("解析隧道列表失败: {}", e))?;
+        let tunnel_ids: Vec<String> =
+            serde_json::from_value(result).map_err(|e| format!("解析隧道列表失败: {}", e))?;
 
         Ok(tunnel_ids)
     }

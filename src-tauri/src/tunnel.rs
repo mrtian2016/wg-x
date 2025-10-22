@@ -6,6 +6,8 @@ use std::os::unix::net::UnixStream;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
+use crate::commands::key_management::private_key_to_public;
+
 // 进程包装器，用于统一管理不同类型的子进程
 enum ProcessHandle {
     StdProcess(std::process::Child),
@@ -20,13 +22,9 @@ impl ProcessHandle {
                 child.kill().map_err(|e| format!("杀死进程失败: {}", e))
             }
             #[cfg(target_os = "macos")]
-            ProcessHandle::PrivilegedProcess(pid) => {
-                stop_wireguard_macos(*pid)
-            }
+            ProcessHandle::PrivilegedProcess(pid) => stop_wireguard_macos(*pid),
             #[cfg(target_os = "linux")]
-            ProcessHandle::PrivilegedProcess(pid) => {
-                stop_wireguard_linux(*pid, tunnel_id)
-            }
+            ProcessHandle::PrivilegedProcess(pid) => stop_wireguard_linux(*pid, tunnel_id),
         }
     }
 }
@@ -60,7 +58,10 @@ fn start_wireguard_macos(
     let (ip_only, netmask) = if ip_address.contains('/') {
         let parts: Vec<&str> = ip_address.split('/').collect();
         let ip = parts[0];
-        let prefix_len = parts.get(1).and_then(|s| s.parse::<u32>().ok()).unwrap_or(24);
+        let prefix_len = parts
+            .get(1)
+            .and_then(|s| s.parse::<u32>().ok())
+            .unwrap_or(24);
 
         // 根据前缀长度生成子网掩码
         let mask = if prefix_len == 32 {
@@ -74,11 +75,13 @@ fn start_wireguard_macos(
         } else {
             // 通用计算
             let mask_value = (!0u32) << (32 - prefix_len);
-            format!("{}.{}.{}.{}",
+            format!(
+                "{}.{}.{}.{}",
                 (mask_value >> 24) & 0xff,
                 (mask_value >> 16) & 0xff,
                 (mask_value >> 8) & 0xff,
-                mask_value & 0xff)
+                mask_value & 0xff
+            )
         };
         (ip, mask)
     } else {
@@ -152,7 +155,9 @@ fn start_wireguard_macos(
 
     // 从 stdout 读取 PID
     let pid_str = String::from_utf8_lossy(&output.stdout);
-    let pid: i32 = pid_str.trim().parse()
+    let pid: i32 = pid_str
+        .trim()
+        .parse()
         .map_err(|e| format!("解析 PID 失败: {} (输出: {})", e, pid_str))?;
 
     log::info!("wireguard-go 已启动，PID: {}", pid);
@@ -208,7 +213,10 @@ fn start_wireguard_linux_daemon(
 
     // 检查守护进程是否运行
     if !IpcClient::is_daemon_running() {
-        return Err("WireGuard 守护进程未运行。请先启动守护进程: sudo systemctl start wg-x-daemon".to_string());
+        return Err(
+            "WireGuard 守护进程未运行。请先启动守护进程: sudo systemctl start wg-x-daemon"
+                .to_string(),
+        );
     }
 
     // 构建 IPC 配置
@@ -381,9 +389,7 @@ fn stop_wireguard_linux(pid: i32, tunnel_id: &str) -> Result<(), String> {
 fn interface_exists(name: &str) -> bool {
     #[cfg(target_os = "macos")]
     {
-        let output = std::process::Command::new("ifconfig")
-            .arg(name)
-            .output();
+        let output = std::process::Command::new("ifconfig").arg(name).output();
 
         if let Ok(result) = output {
             result.status.success()
@@ -447,7 +453,10 @@ fn base64_to_hex(base64_key: &str) -> Result<String, String> {
         .map_err(|e| format!("Base64 解码失败: {}", e))?;
 
     if bytes.len() != 32 {
-        return Err(format!("密钥长度错误: 应为32字节,实际为{}字节", bytes.len()));
+        return Err(format!(
+            "密钥长度错误: 应为32字节,实际为{}字节",
+            bytes.len()
+        ));
     }
 
     // 转换为十六进制字符串
@@ -510,7 +519,7 @@ pub struct TunnelConfig {
     // Interface 配置
     pub private_key: String,
     pub address: String,
-    pub listen_port: String,    // 空字符串表示自动
+    pub listen_port: String, // 空字符串表示自动
     pub dns: String,
     pub mtu: String,
     // Peer 配置 - 支持多个 Peer
@@ -558,11 +567,12 @@ pub async fn configure_interface(
     // 在阻塞线程池中执行同步 I/O
     tokio::task::spawn_blocking(move || {
         // 连接到 UAPI socket
-        let mut stream = UnixStream::connect(&socket_path)
-            .map_err(|e| format!("无法连接到 socket: {}", e))?;
+        let mut stream =
+            UnixStream::connect(&socket_path).map_err(|e| format!("无法连接到 socket: {}", e))?;
 
         // 设置超时
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(2)))
             .map_err(|e| format!("设置超时失败: {}", e))?;
 
         // 构建配置命令
@@ -659,7 +669,10 @@ pub async fn configure_interface(
                         break;
                     }
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
                     if !response.is_empty() {
                         break;
                     }
@@ -676,7 +689,8 @@ pub async fn configure_interface(
         } else {
             Ok("配置应用成功".to_string())
         }
-    }).await
+    })
+    .await
     .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
@@ -685,8 +699,8 @@ pub async fn configure_interface(
 pub async fn add_peer(interface: String, peer: PeerConfig) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
 
-    let mut stream = UnixStream::connect(&socket_path)
-        .map_err(|e| format!("无法连接到 socket: {}", e))?;
+    let mut stream =
+        UnixStream::connect(&socket_path).map_err(|e| format!("无法连接到 socket: {}", e))?;
 
     let mut uapi_config = String::from("set=1\n");
 
@@ -735,8 +749,8 @@ pub async fn add_peer(interface: String, peer: PeerConfig) -> Result<String, Str
 pub async fn remove_peer(interface: String, public_key: String) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
 
-    let mut stream = UnixStream::connect(&socket_path)
-        .map_err(|e| format!("无法连接到 socket: {}", e))?;
+    let mut stream =
+        UnixStream::connect(&socket_path).map_err(|e| format!("无法连接到 socket: {}", e))?;
 
     // 将 Base64 公钥转换为十六进制
     let public_key_hex = base64_to_hex(&public_key)?;
@@ -765,11 +779,12 @@ pub async fn get_interface_status(interface: String) -> Result<String, String> {
 
     // 在 tokio 的阻塞线程池中执行同步 I/O
     tokio::task::spawn_blocking(move || {
-        let mut stream = UnixStream::connect(&socket_path)
-            .map_err(|e| format!("无法连接到 socket: {}", e))?;
+        let mut stream =
+            UnixStream::connect(&socket_path).map_err(|e| format!("无法连接到 socket: {}", e))?;
 
         // 设置读取超时
-        stream.set_read_timeout(Some(std::time::Duration::from_secs(1)))
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(1)))
             .map_err(|e| format!("设置超时失败: {}", e))?;
 
         // 发送 get 命令
@@ -791,7 +806,10 @@ pub async fn get_interface_status(interface: String) -> Result<String, String> {
                         break;
                     }
                 }
-                Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::WouldBlock
+                        || e.kind() == std::io::ErrorKind::TimedOut =>
+                {
                     // 超时或没有更多数据
                     if !response.is_empty() {
                         break;
@@ -803,7 +821,8 @@ pub async fn get_interface_status(interface: String) -> Result<String, String> {
         }
 
         Ok(response)
-    }).await
+    })
+    .await
     .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
@@ -817,15 +836,9 @@ fn configure_routes_macos(interface: &str, allowed_ips: &[String]) -> Result<(),
             continue;
         }
 
-        let route_cmd = format!(
-            "route add -inet {} -interface {}",
-            ip, interface
-        );
+        let route_cmd = format!("route add -inet {} -interface {}", ip, interface);
 
-        let shell_script = format!(
-            "{}",
-            route_cmd
-        );
+        let shell_script = format!("{}", route_cmd);
 
         let applescript = format!(
             "do shell script \"{}\" with administrator privileges",
@@ -890,7 +903,10 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     // 额外检查:如果可能生成的接口已存在,说明有残留进程
     let potential_interface = generate_interface_name(&tunnel_id);
     if interface_exists(&potential_interface) {
-        return Err(format!("接口 {} 已存在,可能有残留进程。请先手动停止或删除该接口", potential_interface));
+        return Err(format!(
+            "接口 {} 已存在,可能有残留进程。请先手动停止或删除该接口",
+            potential_interface
+        ));
     }
 
     // 从隧道配置目录加载配置
@@ -899,14 +915,16 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
 
-    let config_file = app_data_dir.join("tunnels").join(format!("{}.json", tunnel_id));
+    let config_file = app_data_dir
+        .join("tunnels")
+        .join(format!("{}.json", tunnel_id));
 
     if !config_file.exists() {
         return Err("隧道配置不存在".to_string());
     }
 
-    let content = std::fs::read_to_string(&config_file)
-        .map_err(|e| format!("读取配置失败: {}", e))?;
+    let content =
+        std::fs::read_to_string(&config_file).map_err(|e| format!("读取配置失败: {}", e))?;
 
     let tunnel_config: TunnelConfig =
         serde_json::from_str(&content).map_err(|e| format!("解析配置失败: {}", e))?;
@@ -929,7 +947,8 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     // 优先使用新的 peers 数组
     if !tunnel_config.peers.is_empty() {
         for tunnel_peer in &tunnel_config.peers {
-            let allowed_ips: Vec<String> = tunnel_peer.allowed_ips
+            let allowed_ips: Vec<String> = tunnel_peer
+                .allowed_ips
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .filter(|s| !s.is_empty())
@@ -967,7 +986,11 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         let allowed_ips = if tunnel_config.allowed_ips.is_empty() {
             vec![]
         } else {
-            tunnel_config.allowed_ips.split(',').map(|s| s.trim().to_string()).collect()
+            tunnel_config
+                .allowed_ips
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .collect()
         };
 
         peers.push(PeerConfig {
@@ -1017,7 +1040,8 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             &interface_name,
             &tunnel_config.address,
             &all_routes,
-        ).map_err(|e| format!("启动隧道失败: {}", e))?;
+        )
+        .map_err(|e| format!("启动隧道失败: {}", e))?;
 
         // 保存进程句柄
         {
@@ -1057,7 +1081,8 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             &interface_name,
             &tunnel_config.address,
             sidecar_path_str,
-        ).map_err(|e| format!("启动隧道失败: {}", e))?;
+        )
+        .map_err(|e| format!("启动隧道失败: {}", e))?;
 
         // 保存进程句柄
         {
@@ -1086,7 +1111,10 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
             // 保存隧道配置(用于定期更新 endpoint)
             {
                 let mut configs = TUNNEL_CONFIGS.lock().await;
-                configs.insert(tunnel_id.clone(), (interface_name.clone(), interface_config.clone()));
+                configs.insert(
+                    tunnel_id.clone(),
+                    (interface_name.clone(), interface_config.clone()),
+                );
             }
 
             // 启动 endpoint 定期刷新任务(处理动态域名)
@@ -1134,7 +1162,8 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
             #[cfg(target_os = "macos")]
             {
                 // 使用 osascript 请求管理员权限来杀死进程
-                let shell_command = format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
+                let shell_command =
+                    format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
 
                 let applescript = format!(
                     "do shell script \"{}\" with administrator privileges",
@@ -1169,7 +1198,8 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
             #[cfg(target_os = "linux")]
             {
                 // 使用 pkexec 或 sudo 请求管理员权限来杀死进程
-                let shell_command = format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
+                let shell_command =
+                    format!("/usr/bin/pkill -9 -f 'wireguard-go.*{}'", interface_name);
 
                 // 尝试使用 pkexec
                 let use_pkexec = std::process::Command::new("which")
@@ -1218,7 +1248,10 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
                 return Ok(());
             } else {
                 log::warn!("接口仍然存在,可能需要手动清理");
-                return Err(format!("已尝试清理残留接口 {},但仍然存在。请检查系统进程或重启应用", interface_name));
+                return Err(format!(
+                    "已尝试清理残留接口 {},但仍然存在。请检查系统进程或重启应用",
+                    interface_name
+                ));
             }
         }
 
@@ -1236,7 +1269,10 @@ pub async fn get_tunnel_list(app: tauri::AppHandle) -> Result<Vec<TunnelStatus>,
 
 // 获取隧道详情
 #[tauri::command]
-pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Result<TunnelStatus, String> {
+pub async fn get_tunnel_details(
+    tunnel_id: String,
+    app: tauri::AppHandle,
+) -> Result<TunnelStatus, String> {
     // 获取应用数据目录
     let app_data_dir = app
         .path()
@@ -1244,14 +1280,16 @@ pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Res
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
 
     // 从隧道配置目录加载配置
-    let config_file = app_data_dir.join("tunnels").join(format!("{}.json", tunnel_id));
+    let config_file = app_data_dir
+        .join("tunnels")
+        .join(format!("{}.json", tunnel_id));
 
     if !config_file.exists() {
         return Err("隧道配置不存在".to_string());
     }
 
-    let content = std::fs::read_to_string(&config_file)
-        .map_err(|e| format!("读取配置失败: {}", e))?;
+    let content =
+        std::fs::read_to_string(&config_file).map_err(|e| format!("读取配置失败: {}", e))?;
 
     let tunnel_config: TunnelConfig =
         serde_json::from_str(&content).map_err(|e| format!("解析配置失败: {}", e))?;
@@ -1275,9 +1313,8 @@ pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Res
             use crate::daemon_ipc::IpcClient;
             let tid = tunnel_id.clone();
             // 使用 spawn_blocking 避免阻塞异步运行时
-            let result = tokio::task::spawn_blocking(move || {
-                IpcClient::get_tunnel_status(&tid)
-            }).await;
+            let result =
+                tokio::task::spawn_blocking(move || IpcClient::get_tunnel_status(&tid)).await;
 
             match result {
                 Ok(Ok(status)) => (status.tx_bytes, status.rx_bytes, status.last_handshake),
@@ -1302,18 +1339,26 @@ pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Res
         let first_peer = &tunnel_config.peers[0];
         (
             first_peer.endpoint.clone(),
-            Some(first_peer.allowed_ips.clone())
+            Some(first_peer.allowed_ips.clone()),
         )
     } else {
         (
-            if tunnel_config.endpoint.is_empty() { None } else { Some(tunnel_config.endpoint.clone()) },
-            if tunnel_config.allowed_ips.is_empty() { None } else { Some(tunnel_config.allowed_ips.clone()) }
+            if tunnel_config.endpoint.is_empty() {
+                None
+            } else {
+                Some(tunnel_config.endpoint.clone())
+            },
+            if tunnel_config.allowed_ips.is_empty() {
+                None
+            } else {
+                Some(tunnel_config.allowed_ips.clone())
+            },
         )
     };
 
     // 计算公钥 (如果有私钥的话)
     let public_key = if !tunnel_config.private_key.is_empty() {
-        crate::private_key_to_public(tunnel_config.private_key.clone()).ok()
+        private_key_to_public(tunnel_config.private_key.clone()).ok()
     } else {
         None
     };
@@ -1321,7 +1366,11 @@ pub async fn get_tunnel_details(tunnel_id: String, app: tauri::AppHandle) -> Res
     Ok(TunnelStatus {
         id: tunnel_id,
         name: tunnel_config.name.clone(),
-        status: if is_running { "running".to_string() } else { "stopped".to_string() },
+        status: if is_running {
+            "running".to_string()
+        } else {
+            "stopped".to_string()
+        },
         address: Some(tunnel_config.address.clone()),
         endpoint,
         listen_port: tunnel_config.listen_port.parse().ok(),
@@ -1373,10 +1422,7 @@ fn parse_wg_config(config: &str) -> Result<InterfaceConfig, String> {
                 }
             } else if line.starts_with("AllowedIPs") {
                 if let Some(value) = line.split('=').nth(1) {
-                    peer.allowed_ips = value
-                        .split(',')
-                        .map(|s| s.trim().to_string())
-                        .collect();
+                    peer.allowed_ips = value.split(',').map(|s| s.trim().to_string()).collect();
                 }
             } else if line.starts_with("PersistentKeepalive") {
                 if let Some(value) = line.split('=').nth(1) {
@@ -1476,8 +1522,8 @@ pub async fn save_tunnel_config(app: tauri::AppHandle, config: TunnelConfig) -> 
     std::fs::create_dir_all(&tunnels_dir).map_err(|e| format!("创建隧道目录失败: {}", e))?;
 
     let file_path = tunnels_dir.join(format!("{}.json", config.id));
-    let json = serde_json::to_string_pretty(&config)
-        .map_err(|e| format!("序列化隧道配置失败: {}", e))?;
+    let json =
+        serde_json::to_string_pretty(&config).map_err(|e| format!("序列化隧道配置失败: {}", e))?;
 
     std::fs::write(&file_path, json).map_err(|e| format!("保存隧道配置失败: {}", e))?;
 
@@ -1486,20 +1532,25 @@ pub async fn save_tunnel_config(app: tauri::AppHandle, config: TunnelConfig) -> 
 
 // 获取隧道完整配置(用于编辑)
 #[tauri::command]
-pub async fn get_tunnel_config(app: tauri::AppHandle, tunnel_id: String) -> Result<TunnelConfig, String> {
+pub async fn get_tunnel_config(
+    app: tauri::AppHandle,
+    tunnel_id: String,
+) -> Result<TunnelConfig, String> {
     let app_data_dir = app
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
 
-    let config_file = app_data_dir.join("tunnels").join(format!("{}.json", tunnel_id));
+    let config_file = app_data_dir
+        .join("tunnels")
+        .join(format!("{}.json", tunnel_id));
 
     if !config_file.exists() {
         return Err("隧道配置不存在".to_string());
     }
 
-    let content = std::fs::read_to_string(&config_file)
-        .map_err(|e| format!("读取配置失败: {}", e))?;
+    let content =
+        std::fs::read_to_string(&config_file).map_err(|e| format!("读取配置失败: {}", e))?;
 
     let tunnel_config: TunnelConfig =
         serde_json::from_str(&content).map_err(|e| format!("解析配置失败: {}", e))?;
@@ -1523,7 +1574,9 @@ pub async fn delete_tunnel_config(app: tauri::AppHandle, tunnel_id: String) -> R
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
 
-    let file_path = app_data_dir.join("tunnels").join(format!("{}.json", tunnel_id));
+    let file_path = app_data_dir
+        .join("tunnels")
+        .join(format!("{}.json", tunnel_id));
 
     if file_path.exists() {
         std::fs::remove_file(&file_path).map_err(|e| format!("删除隧道配置失败: {}", e))?;
@@ -1558,8 +1611,8 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
     };
 
     // 读取所有隧道配置
-    let entries = std::fs::read_dir(&tunnels_dir)
-        .map_err(|e| format!("读取隧道目录失败: {}", e))?;
+    let entries =
+        std::fs::read_dir(&tunnels_dir).map_err(|e| format!("读取隧道目录失败: {}", e))?;
 
     for entry in entries {
         if let Ok(entry) = entry {
@@ -1570,108 +1623,130 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                     // log::debug!("读取配置成功,长度: {}", content.len());
                     match serde_json::from_str::<TunnelConfig>(&content) {
                         Ok(tunnel_config) => {
-                            log::debug!("解析配置成功: id={}, name={}", tunnel_config.id, tunnel_config.name);
-                        let is_in_process_list = running_tunnels.contains(&tunnel_config.id);
+                            log::debug!(
+                                "解析配置成功: id={}, name={}",
+                                tunnel_config.id,
+                                tunnel_config.name
+                            );
+                            let is_in_process_list = running_tunnels.contains(&tunnel_config.id);
 
-                        // 生成接口名称
-                        let interface_name = generate_interface_name(&tunnel_config.id);
-                        let interface_exists = interface_exists(&interface_name);
+                            // 生成接口名称
+                            let interface_name = generate_interface_name(&tunnel_config.id);
+                            let interface_exists = interface_exists(&interface_name);
 
-                        // 判断实际运行状态:
-                        // 1. 在进程列表 + 接口存在 = running
-                        // 2. 不在进程列表 + 接口存在 = running (残留进程,但仍在运行)
-                        // 3. 不在进程列表 + 接口不存在 = stopped
-                        let is_running = is_in_process_list || interface_exists;
+                            // 判断实际运行状态:
+                            // 1. 在进程列表 + 接口存在 = running
+                            // 2. 不在进程列表 + 接口存在 = running (残留进程,但仍在运行)
+                            // 3. 不在进程列表 + 接口不存在 = stopped
+                            let is_running = is_in_process_list || interface_exists;
 
-                        let (tx_bytes, rx_bytes, last_handshake) = if is_running {
-                            // Linux: 通过守护进程 IPC 获取状态（避免权限问题）
-                            #[cfg(target_os = "linux")]
-                            {
-                                use crate::daemon_ipc::IpcClient;
-                                log::debug!("通过守护进程获取接口 {} 状态...", interface_name);
-                                let tunnel_id = tunnel_config.id.clone();
-                                // 使用 spawn_blocking 避免阻塞异步运行时
-                                let result = tokio::task::spawn_blocking(move || {
-                                    IpcClient::get_tunnel_status(&tunnel_id)
-                                }).await;
+                            let (tx_bytes, rx_bytes, last_handshake) = if is_running {
+                                // Linux: 通过守护进程 IPC 获取状态（避免权限问题）
+                                #[cfg(target_os = "linux")]
+                                {
+                                    use crate::daemon_ipc::IpcClient;
+                                    log::debug!("通过守护进程获取接口 {} 状态...", interface_name);
+                                    let tunnel_id = tunnel_config.id.clone();
+                                    // 使用 spawn_blocking 避免阻塞异步运行时
+                                    let result = tokio::task::spawn_blocking(move || {
+                                        IpcClient::get_tunnel_status(&tunnel_id)
+                                    })
+                                    .await;
 
-                                match result {
-                                    Ok(Ok(status)) => {
-                                        log::debug!("获取状态成功");
-                                        (status.tx_bytes, status.rx_bytes, status.last_handshake)
-                                    }
-                                    Ok(Err(e)) => {
-                                        log::warn!("获取状态失败: {}", e);
-                                        (0, 0, None)
-                                    }
-                                    Err(e) => {
-                                        log::warn!("任务执行失败: {}", e);
-                                        (0, 0, None)
-                                    }
-                                }
-                            }
-
-                            // macOS: 直接访问 socket（GUI 有权限）
-                            #[cfg(target_os = "macos")]
-                            {
-                                log::debug!("获取接口 {} 状态...", interface_name);
-                                let timeout = tokio::time::Duration::from_secs(2);
-                                let status_result = tokio::time::timeout(
-                                    timeout,
-                                    get_interface_status(interface_name.clone())
-                                ).await;
-
-                                match status_result {
-                                    Ok(Ok(status_str)) => {
-                                        log::debug!("获取状态成功");
-                                        parse_interface_status(&status_str)
-                                    }
-                                    Ok(Err(e)) => {
-                                        log::warn!("获取状态失败: {}", e);
-                                        (0, 0, None)
-                                    }
-                                    Err(_) => {
-                                        log::warn!("获取状态超时");
-                                        (0, 0, None)
+                                    match result {
+                                        Ok(Ok(status)) => {
+                                            log::debug!("获取状态成功");
+                                            (
+                                                status.tx_bytes,
+                                                status.rx_bytes,
+                                                status.last_handshake,
+                                            )
+                                        }
+                                        Ok(Err(e)) => {
+                                            log::warn!("获取状态失败: {}", e);
+                                            (0, 0, None)
+                                        }
+                                        Err(e) => {
+                                            log::warn!("任务执行失败: {}", e);
+                                            (0, 0, None)
+                                        }
                                     }
                                 }
-                            }
-                        } else {
-                            (0, 0, None)
-                        };
 
-                        // 从 peers 数组或旧格式字段中提取 endpoint 和 allowed_ips
-                        let (endpoint, allowed_ips) = if !tunnel_config.peers.is_empty() {
-                            // 使用新格式: peers 数组 (取第一个 peer 的信息用于显示)
-                            let first_peer = &tunnel_config.peers[0];
-                            (
-                                first_peer.endpoint.clone(),
-                                Some(first_peer.allowed_ips.clone())
-                            )
-                        } else {
-                            // 向后兼容: 使用旧格式字段
-                            (
-                                if tunnel_config.endpoint.is_empty() { None } else { Some(tunnel_config.endpoint.clone()) },
-                                if tunnel_config.allowed_ips.is_empty() { None } else { Some(tunnel_config.allowed_ips.clone()) }
-                            )
-                        };
+                                // macOS: 直接访问 socket（GUI 有权限）
+                                #[cfg(target_os = "macos")]
+                                {
+                                    log::debug!("获取接口 {} 状态...", interface_name);
+                                    let timeout = tokio::time::Duration::from_secs(2);
+                                    let status_result = tokio::time::timeout(
+                                        timeout,
+                                        get_interface_status(interface_name.clone()),
+                                    )
+                                    .await;
 
-                        let tunnel_status = TunnelStatus {
-                            id: tunnel_config.id.clone(),
-                            name: tunnel_config.name.clone(),
-                            status: if is_running { "running".to_string() } else { "stopped".to_string() },
-                            address: Some(tunnel_config.address.clone()),
-                            endpoint,
-                            listen_port: tunnel_config.listen_port.parse().ok(),
-                            tx_bytes,
-                            rx_bytes,
-                            last_handshake,
-                            public_key: None, // 不暴露公钥
-                            allowed_ips,
-                        };
+                                    match status_result {
+                                        Ok(Ok(status_str)) => {
+                                            log::debug!("获取状态成功");
+                                            parse_interface_status(&status_str)
+                                        }
+                                        Ok(Err(e)) => {
+                                            log::warn!("获取状态失败: {}", e);
+                                            (0, 0, None)
+                                        }
+                                        Err(_) => {
+                                            log::warn!("获取状态超时");
+                                            (0, 0, None)
+                                        }
+                                    }
+                                }
+                            } else {
+                                (0, 0, None)
+                            };
 
-                        // log::debug!("添加隧道: {:?}", tunnel_status.name);
-                        tunnels.push(tunnel_status);
+                            // 从 peers 数组或旧格式字段中提取 endpoint 和 allowed_ips
+                            let (endpoint, allowed_ips) = if !tunnel_config.peers.is_empty() {
+                                // 使用新格式: peers 数组 (取第一个 peer 的信息用于显示)
+                                let first_peer = &tunnel_config.peers[0];
+                                (
+                                    first_peer.endpoint.clone(),
+                                    Some(first_peer.allowed_ips.clone()),
+                                )
+                            } else {
+                                // 向后兼容: 使用旧格式字段
+                                (
+                                    if tunnel_config.endpoint.is_empty() {
+                                        None
+                                    } else {
+                                        Some(tunnel_config.endpoint.clone())
+                                    },
+                                    if tunnel_config.allowed_ips.is_empty() {
+                                        None
+                                    } else {
+                                        Some(tunnel_config.allowed_ips.clone())
+                                    },
+                                )
+                            };
+
+                            let tunnel_status = TunnelStatus {
+                                id: tunnel_config.id.clone(),
+                                name: tunnel_config.name.clone(),
+                                status: if is_running {
+                                    "running".to_string()
+                                } else {
+                                    "stopped".to_string()
+                                },
+                                address: Some(tunnel_config.address.clone()),
+                                endpoint,
+                                listen_port: tunnel_config.listen_port.parse().ok(),
+                                tx_bytes,
+                                rx_bytes,
+                                last_handshake,
+                                public_key: None, // 不暴露公钥
+                                allowed_ips,
+                            };
+
+                            // log::debug!("添加隧道: {:?}", tunnel_status.name);
+                            tunnels.push(tunnel_status);
                         }
                         Err(e) => {
                             log::warn!("解析配置失败: {}", e);
@@ -1788,7 +1863,8 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                     let mut buffer = [0u8; 1024];
                                     match stream.read(&mut buffer) {
                                         Ok(n) => {
-                                            response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                                            response
+                                                .push_str(&String::from_utf8_lossy(&buffer[..n]));
                                         }
                                         Err(_) => {}
                                     }
@@ -1802,7 +1878,8 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
                                         if response.contains("errno=0") || response.is_empty() {
                                             log::info!("成功更新 endpoint: {}", resolved_endpoint);
                                             // 保存新的 endpoint,下次对比时使用
-                                            last_resolved_endpoints.insert(peer.public_key.clone(), resolved_endpoint);
+                                            last_resolved_endpoints
+                                                .insert(peer.public_key.clone(), resolved_endpoint);
                                         } else {
                                             log::warn!("更新 endpoint 返回: {}", response);
                                         }

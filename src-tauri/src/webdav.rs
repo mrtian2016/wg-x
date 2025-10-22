@@ -18,12 +18,12 @@ pub struct WebDavConfig {
 /// 最后同步信息
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct LastSyncInfo {
-    pub timestamp: i64,                  // 同步时间戳
-    pub sync_type: String,               // 同步类型: "bidirectional", "upload", "download", "auto"
-    pub servers_uploaded: usize,         // 上传的服务端配置数量
-    pub servers_downloaded: usize,       // 下载的服务端配置数量
-    pub history_uploaded: usize,         // 上传的历史记录数量
-    pub history_downloaded: usize,       // 下载的历史记录数量
+    pub timestamp: i64,            // 同步时间戳
+    pub sync_type: String,         // 同步类型: "bidirectional", "upload", "download", "auto"
+    pub servers_uploaded: usize,   // 上传的服务端配置数量
+    pub servers_downloaded: usize, // 下载的服务端配置数量
+    pub history_uploaded: usize,   // 上传的历史记录数量
+    pub history_downloaded: usize, // 下载的历史记录数量
 }
 
 impl Default for WebDavConfig {
@@ -33,7 +33,7 @@ impl Default for WebDavConfig {
             server_url: String::new(),
             username: String::new(),
             password: String::new(),
-            sync_interval: 300, // 默认 5 分钟
+            sync_interval: 300,       // 默认 5 分钟
             auto_sync_enabled: false, // 默认关闭自动同步
         }
     }
@@ -87,8 +87,7 @@ impl WebDavClient {
         // 确保远程目录存在
         if let Some(parent) = Path::new(remote_path).parent() {
             if parent != Path::new("") {
-                self.create_directory(parent.to_str().unwrap_or(""))
-                    .await?;
+                self.create_directory(parent.to_str().unwrap_or("")).await?;
             }
         }
 
@@ -290,8 +289,7 @@ impl WebDavClient {
             format!("{}/", self.config.server_url)
         };
 
-        let base = Url::parse(&base_url)
-            .map_err(|e| format!("无效的服务器 URL: {}", e))?;
+        let base = Url::parse(&base_url).map_err(|e| format!("无效的服务器 URL: {}", e))?;
 
         let path = path.trim_start_matches('/');
         let url = base

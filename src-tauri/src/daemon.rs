@@ -43,15 +43,12 @@ pub async fn run_daemon() -> Result<(), String> {
     }
 
     // 创建 Unix Socket 监听器
-    let listener = UnixListener::bind(DAEMON_SOCKET_PATH)
-        .map_err(|e| format!("绑定 socket 失败: {}", e))?;
+    let listener =
+        UnixListener::bind(DAEMON_SOCKET_PATH).map_err(|e| format!("绑定 socket 失败: {}", e))?;
 
     // 设置 socket 文件权限为 0666,允许普通用户连接
-    std::fs::set_permissions(
-        DAEMON_SOCKET_PATH,
-        std::fs::Permissions::from_mode(0o666),
-    )
-    .map_err(|e| format!("设置 socket 权限失败: {}", e))?;
+    std::fs::set_permissions(DAEMON_SOCKET_PATH, std::fs::Permissions::from_mode(0o666))
+        .map_err(|e| format!("设置 socket 权限失败: {}", e))?;
 
     log::info!("守护进程监听在: {}", DAEMON_SOCKET_PATH);
 
@@ -86,8 +83,8 @@ async fn handle_client(stream: UnixStream) -> Result<(), String> {
         .map_err(|e| format!("读取请求失败: {}", e))?;
 
     // 解析请求
-    let request: IpcRequest = serde_json::from_str(&request_line)
-        .map_err(|e| format!("解析请求失败: {}", e))?;
+    let request: IpcRequest =
+        serde_json::from_str(&request_line).map_err(|e| format!("解析请求失败: {}", e))?;
 
     log::info!("收到请求: method={}, id={}", request.method, request.id);
 
@@ -106,8 +103,8 @@ async fn handle_client(stream: UnixStream) -> Result<(), String> {
     };
 
     // 发送响应
-    let response_json = serde_json::to_string(&response)
-        .map_err(|e| format!("序列化响应失败: {}", e))?;
+    let response_json =
+        serde_json::to_string(&response).map_err(|e| format!("序列化响应失败: {}", e))?;
 
     let mut writer = stream;
     writer
@@ -160,8 +157,13 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
     }
 
     // 使用配置中传入的 wireguard-go 路径,如果无效则尝试查找备用路径
-    let wg_go_path = if !config.wireguard_go_path.is_empty() && std::path::Path::new(&config.wireguard_go_path).exists() {
-        log::info!("使用应用传入的 wireguard-go 路径: {}", config.wireguard_go_path);
+    let wg_go_path = if !config.wireguard_go_path.is_empty()
+        && std::path::Path::new(&config.wireguard_go_path).exists()
+    {
+        log::info!(
+            "使用应用传入的 wireguard-go 路径: {}",
+            config.wireguard_go_path
+        );
         config.wireguard_go_path.clone()
     } else {
         log::warn!("应用传入的路径无效或不存在: {}", config.wireguard_go_path);
@@ -193,7 +195,8 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
 
     log::info!(
         "启动 WireGuard 隧道: interface={}, wireguard-go={}",
-        config.interface_name, wg_go_path
+        config.interface_name,
+        wg_go_path
     );
 
     // 启动 wireguard-go (使用引用避免所有权转移)
@@ -320,11 +323,10 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
                 // wireguard-go 的 UAPI 只接受 IP 地址，必须解析域名
                 // 使用 spawn_blocking 避免在异步上下文中阻塞
                 let endpoint_clone = endpoint.clone();
-                let resolved = tokio::task::spawn_blocking(move || {
-                    resolve_endpoint_blocking(&endpoint_clone)
-                })
-                .await
-                .map_err(|e| format!("解析任务失败: {}", e))?;
+                let resolved =
+                    tokio::task::spawn_blocking(move || resolve_endpoint_blocking(&endpoint_clone))
+                        .await
+                        .map_err(|e| format!("解析任务失败: {}", e))?;
 
                 match resolved {
                     Ok(resolved_endpoint) => {
@@ -377,7 +379,8 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
     log::debug!("发送 UAPI 配置:\n{}", uapi_config);
 
     // 设置读取超时
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(2)))
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .map_err(|e| format!("设置超时失败: {}", e))?;
 
     // 发送配置
@@ -399,7 +402,10 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
                     break;
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 if !response.is_empty() {
                     break;
                 }
@@ -420,16 +426,17 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
 
 /// 处理停止隧道请求
 async fn handle_stop_tunnel(request_id: String, params: serde_json::Value) -> IpcResponse {
-    let tunnel_id: String = match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
-        Ok(id) => id,
-        Err(e) => {
-            return IpcResponse {
-                id: request_id,
-                result: None,
-                error: Some(format!("解析 tunnel_id 失败: {}", e)),
-            };
-        }
-    };
+    let tunnel_id: String =
+        match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
+            Ok(id) => id,
+            Err(e) => {
+                return IpcResponse {
+                    id: request_id,
+                    result: None,
+                    error: Some(format!("解析 tunnel_id 失败: {}", e)),
+                };
+            }
+        };
 
     match stop_tunnel_internal(&tunnel_id).await {
         Ok(_) => IpcResponse {
@@ -512,17 +519,18 @@ async fn stop_tunnel_internal(tunnel_id: &str) -> Result<(), String> {
 /// 处理获取隧道状态请求
 async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value) -> IpcResponse {
     log::info!("收到获取隧道状态请求: params={:?}", params);
-    let tunnel_id: String = match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
-        Ok(id) => id,
-        Err(e) => {
-            log::error!("解析 tunnel_id 失败: {}", e);
-            return IpcResponse {
-                id: request_id,
-                result: None,
-                error: Some(format!("解析 tunnel_id 失败: {}", e)),
-            };
-        }
-    };
+    let tunnel_id: String =
+        match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
+            Ok(id) => id,
+            Err(e) => {
+                log::error!("解析 tunnel_id 失败: {}", e);
+                return IpcResponse {
+                    id: request_id,
+                    result: None,
+                    error: Some(format!("解析 tunnel_id 失败: {}", e)),
+                };
+            }
+        };
 
     log::info!("查询隧道状态: tunnel_id={}", tunnel_id);
     match get_tunnel_status_internal(&tunnel_id).await {
@@ -571,7 +579,8 @@ async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, 
     // 再次获取接口名称（需要重新锁定）
     let interface_name = {
         let tunnels = DAEMON_TUNNELS.lock().await;
-        tunnels.get(tunnel_id)
+        tunnels
+            .get(tunnel_id)
             .map(|t| t.interface_name.clone())
             .ok_or_else(|| "隧道已停止".to_string())?
     };
@@ -624,7 +633,10 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
                     break;
                 }
             }
-            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut => {
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
                 // 超时或没有更多数据
                 if !response.is_empty() {
                     log::debug!("超时但已有数据，停止读取");
@@ -644,11 +656,23 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
 
     for line in response.lines() {
         if line.starts_with("rx_bytes=") {
-            rx_bytes = line.strip_prefix("rx_bytes=").unwrap_or("0").parse().unwrap_or(0);
+            rx_bytes = line
+                .strip_prefix("rx_bytes=")
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
         } else if line.starts_with("tx_bytes=") {
-            tx_bytes = line.strip_prefix("tx_bytes=").unwrap_or("0").parse().unwrap_or(0);
+            tx_bytes = line
+                .strip_prefix("tx_bytes=")
+                .unwrap_or("0")
+                .parse()
+                .unwrap_or(0);
         } else if line.starts_with("last_handshake_time_sec=") {
-            if let Ok(ts) = line.strip_prefix("last_handshake_time_sec=").unwrap_or("0").parse::<i64>() {
+            if let Ok(ts) = line
+                .strip_prefix("last_handshake_time_sec=")
+                .unwrap_or("0")
+                .parse::<i64>()
+            {
                 if ts > 0 {
                     last_handshake = Some(ts);
                 }
@@ -687,7 +711,10 @@ fn base64_to_hex(base64_key: &str) -> Result<String, String> {
         .map_err(|e| format!("Base64 解码失败: {}", e))?;
 
     if bytes.len() != 32 {
-        return Err(format!("密钥长度错误: 应为32字节,实际为{}字节", bytes.len()));
+        return Err(format!(
+            "密钥长度错误: 应为32字节,实际为{}字节",
+            bytes.len()
+        ));
     }
 
     Ok(hex::encode(&bytes))
@@ -726,7 +753,7 @@ fn interface_exists(name: &str) -> bool {
 fn find_wireguard_go() -> Result<String, String> {
     // 尝试常见路径（优先级顺序）
     let paths = vec![
-        "/opt/wg-x/wireguard-go",  // 安装守护进程时复制的位置（优先使用）
+        "/opt/wg-x/wireguard-go", // 安装守护进程时复制的位置（优先使用）
         "/usr/local/bin/wireguard-go",
         "/usr/bin/wireguard-go",
         "/opt/wireguard-go/wireguard-go",
@@ -758,60 +785,66 @@ async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), St
     use std::net::IpAddr;
 
     // 在当前 async 上下文中执行，不创建新的 runtime
-        let (connection, handle, _) = new_connection()
-            .map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
+    let (connection, handle, _) =
+        new_connection().map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
 
-        tokio::spawn(connection);
+    tokio::spawn(connection);
 
-        // 解析地址
-        let parts: Vec<&str> = address.split('/').collect();
-        if parts.len() != 2 {
-            return Err(format!("无效的地址格式: {}", address));
+    // 解析地址
+    let parts: Vec<&str> = address.split('/').collect();
+    if parts.len() != 2 {
+        return Err(format!("无效的地址格式: {}", address));
+    }
+
+    let ip: IpAddr = parts[0]
+        .parse()
+        .map_err(|e| format!("解析 IP 地址失败: {}", e))?;
+    let prefix_len: u8 = parts[1]
+        .parse()
+        .map_err(|e| format!("解析前缀长度失败: {}", e))?;
+
+    // 获取接口索引
+    let mut links = handle
+        .link()
+        .get()
+        .match_name(interface.to_string())
+        .execute();
+    let link = links
+        .try_next()
+        .await
+        .map_err(|e| format!("获取接口失败: {}", e))?
+        .ok_or_else(|| format!("接口不存在: {}", interface))?;
+
+    let index = link.header.index;
+
+    // 添加 IP 地址
+    match ip {
+        IpAddr::V4(addr) => {
+            handle
+                .address()
+                .add(index, addr.into(), prefix_len)
+                .execute()
+                .await
+                .map_err(|e| format!("添加 IPv4 地址失败: {}", e))?;
         }
-
-        let ip: IpAddr = parts[0].parse()
-            .map_err(|e| format!("解析 IP 地址失败: {}", e))?;
-        let prefix_len: u8 = parts[1].parse()
-            .map_err(|e| format!("解析前缀长度失败: {}", e))?;
-
-        // 获取接口索引
-        let mut links = handle.link().get().match_name(interface.to_string()).execute();
-        let link = links
-            .try_next()
-            .await
-            .map_err(|e| format!("获取接口失败: {}", e))?
-            .ok_or_else(|| format!("接口不存在: {}", interface))?;
-
-        let index = link.header.index;
-
-        // 添加 IP 地址
-        match ip {
-            IpAddr::V4(addr) => {
-                handle
-                    .address()
-                    .add(index, addr.into(), prefix_len)
-                    .execute()
-                    .await
-                    .map_err(|e| format!("添加 IPv4 地址失败: {}", e))?;
-            }
-            IpAddr::V6(addr) => {
-                handle
-                    .address()
-                    .add(index, addr.into(), prefix_len)
-                    .execute()
-                    .await
-                    .map_err(|e| format!("添加 IPv6 地址失败: {}", e))?;
-            }
+        IpAddr::V6(addr) => {
+            handle
+                .address()
+                .add(index, addr.into(), prefix_len)
+                .execute()
+                .await
+                .map_err(|e| format!("添加 IPv6 地址失败: {}", e))?;
         }
+    }
 
-        // 启动接口
-        handle
-            .link()
-            .set(index)
-            .up()
-            .execute()
-            .await
-            .map_err(|e| format!("启动接口失败: {}", e))?;
+    // 启动接口
+    handle
+        .link()
+        .set(index)
+        .up()
+        .execute()
+        .await
+        .map_err(|e| format!("启动接口失败: {}", e))?;
 
     log::info!("接口 {} 已配置地址 {} 并启动", interface, address);
     Ok(())
@@ -824,57 +857,63 @@ async fn configure_route(interface: &str, destination: &str) -> Result<(), Strin
     use std::net::IpAddr;
 
     // 在当前 async 上下文中执行，不创建新的 runtime
-        let (connection, handle, _) = new_connection()
-            .map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
+    let (connection, handle, _) =
+        new_connection().map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
 
-        tokio::spawn(connection);
+    tokio::spawn(connection);
 
-        // 解析目标地址
-        let parts: Vec<&str> = destination.split('/').collect();
-        if parts.len() != 2 {
-            return Err(format!("无效的路由格式: {}", destination));
+    // 解析目标地址
+    let parts: Vec<&str> = destination.split('/').collect();
+    if parts.len() != 2 {
+        return Err(format!("无效的路由格式: {}", destination));
+    }
+
+    let ip: IpAddr = parts[0]
+        .parse()
+        .map_err(|e| format!("解析目标 IP 失败: {}", e))?;
+    let prefix_len: u8 = parts[1]
+        .parse()
+        .map_err(|e| format!("解析前缀长度失败: {}", e))?;
+
+    // 获取接口索引
+    let mut links = handle
+        .link()
+        .get()
+        .match_name(interface.to_string())
+        .execute();
+    let link = links
+        .try_next()
+        .await
+        .map_err(|e| format!("获取接口失败: {}", e))?
+        .ok_or_else(|| format!("接口不存在: {}", interface))?;
+
+    let index = link.header.index;
+
+    // 添加路由
+    match ip {
+        IpAddr::V4(addr) => {
+            handle
+                .route()
+                .add()
+                .v4()
+                .destination_prefix(addr, prefix_len)
+                .output_interface(index)
+                .execute()
+                .await
+                .map_err(|e| format!("添加 IPv4 路由失败: {}", e))?;
         }
-
-        let ip: IpAddr = parts[0].parse()
-            .map_err(|e| format!("解析目标 IP 失败: {}", e))?;
-        let prefix_len: u8 = parts[1].parse()
-            .map_err(|e| format!("解析前缀长度失败: {}", e))?;
-
-        // 获取接口索引
-        let mut links = handle.link().get().match_name(interface.to_string()).execute();
-        let link = links
-            .try_next()
-            .await
-            .map_err(|e| format!("获取接口失败: {}", e))?
-            .ok_or_else(|| format!("接口不存在: {}", interface))?;
-
-        let index = link.header.index;
-
-        // 添加路由
-        match ip {
-            IpAddr::V4(addr) => {
-                handle
-                    .route()
-                    .add()
-                    .v4()
-                    .destination_prefix(addr, prefix_len)
-                    .output_interface(index)
-                    .execute()
-                    .await
-                    .map_err(|e| format!("添加 IPv4 路由失败: {}", e))?;
-            }
-            IpAddr::V6(addr) => {
-                handle
-                    .route()
-                    .add()
-                    .v6()
-                    .destination_prefix(addr, prefix_len)
-                    .output_interface(index)
-                    .execute()
-                    .await
-                    .map_err(|e| format!("添加 IPv6 路由失败: {}", e))?;
-            }
+        IpAddr::V6(addr) => {
+            handle
+                .route()
+                .add()
+                .v6()
+                .destination_prefix(addr, prefix_len)
+                .output_interface(index)
+                .execute()
+                .await
+                .map_err(|e| format!("添加 IPv6 路由失败: {}", e))?;
         }
+    }
 
     log::info!("已添加路由: {} -> {}", destination, interface);
     Ok(())
