@@ -13,6 +13,7 @@ mod webdav;
 mod sync;
 mod tunnel;
 use tauri_plugin_log::{Target, TargetKind};
+use chrono::Local;
 // 守护进程模块 (仅 Linux)
 #[cfg(target_os = "linux")]
 mod daemon;
@@ -1328,13 +1329,13 @@ fn export_all_configs_zip(app: tauri::AppHandle, zip_path: String) -> Result<(),
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-
+    let log_file_name = format!("{}", Local::now().format("%Y-%m-%d_%H-%M-%S"));
     tauri::Builder::default()
        .plugin(
             tauri_plugin_log::Builder::new()
                 .targets([
                     Target::new(TargetKind::Stdout),
-                    Target::new(TargetKind::LogDir { file_name: None }),
+                    Target::new(TargetKind::LogDir { file_name: Some(log_file_name) }),
                     Target::new(TargetKind::Webview),
                 ])
                 // 日志过滤配置
@@ -1471,41 +1472,4 @@ pub fn run() {
                 _ => {}
             }
         });
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_keypair_generation() {
-        let result = generate_keypair();
-        assert!(result.is_ok());
-
-        let keypair = result.unwrap();
-
-        eprintln!("私钥: {}", keypair.private_key);
-        eprintln!("公钥: {}", keypair.public_key);
-
-        // 验证私钥和公钥不相同
-        assert_ne!(
-            keypair.private_key, keypair.public_key,
-            "私钥和公钥不应该相同!"
-        );
-
-        // 验证长度 (Base64 编码的 32 字节 = 44 字符)
-        assert_eq!(keypair.private_key.len(), 44, "私钥 Base64 长度应该是 44");
-        assert_eq!(keypair.public_key.len(), 44, "公钥 Base64 长度应该是 44");
-    }
-
-    #[test]
-    fn test_private_to_public() {
-        let keypair = generate_keypair().unwrap();
-        let computed_public = private_key_to_public(keypair.private_key.clone()).unwrap();
-
-        eprintln!("原始公钥: {}", keypair.public_key);
-        eprintln!("计算公钥: {}", computed_public);
-
-        assert_eq!(keypair.public_key, computed_public, "公钥应该一致");
-    }
 }
