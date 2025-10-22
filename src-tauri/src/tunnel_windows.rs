@@ -10,36 +10,22 @@ use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESS
 // 用于隐藏控制台窗口
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-// 检查当前进程是否已提升为管理员（使用 Windows TokenElevation 更可靠）
+// 检查当前进程是否以管理员身份运行（通过 PowerShell 判断当前令牌是否在管理员角色中）
 fn is_windows_elevated() -> bool {
     #[cfg(target_os = "windows")]
-    unsafe {
-        use std::mem::{size_of, zeroed};
-        use std::ptr::null_mut;
-        use windows_sys::Win32::Foundation::CloseHandle;
-        use windows_sys::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
-        use windows_sys::Win32::System::Threading::GetCurrentProcess;
-        use windows_sys::Win32::Security::OpenProcessToken;
-
-        let mut token: isize = 0;
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) == 0 {
-            return false;
+    {
+        let ps_expr = r#"(New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)"#;
+        if let Ok(output) = std::process::Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", ps_expr])
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout).trim().to_ascii_lowercase();
+                return text.contains("true");
+            }
         }
-
-        let mut elevation: TOKEN_ELEVATION = zeroed();
-        let mut ret_len: u32 = 0;
-        let ok = GetTokenInformation(
-            token,
-            TokenElevation,
-            &mut elevation as *mut _ as *mut core::ffi::c_void,
-            size_of::<TOKEN_ELEVATION>() as u32,
-            &mut ret_len,
-        );
-        CloseHandle(token);
-        if ok == 0 {
-            return false;
-        }
-        elevation.TokenIsElevated != 0
+        false
     }
     #[cfg(not(target_os = "windows"))]
     {
