@@ -17,7 +17,7 @@ function Toast({ messages, onRemove }) {
         const timer = setTimeout(() => {
           onRemove(id);
           timersRef.current.delete(id);
-        }, 2000);
+        }, 3000);
         timersRef.current.set(id, timer);
       }
     });

@@ -1,7 +1,14 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESSES};
+
+// Windows 创建进程标志：CREATE_NO_WINDOW = 0x08000000
+// 用于隐藏控制台窗口
+const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // Windows 工具函数：清理标识符
 pub fn sanitize_identifier(input: &str) -> String {
@@ -164,43 +171,64 @@ pub fn start_wireguard_windows(
     interface_config: &InterfaceConfig,
     tunnels_dir: &Path,
 ) -> Result<ProcessHandle, String> {
+    log::info!("========== Windows 启动 WireGuard 隧道 ==========");
+    log::info!("隧道 ID: {}", tunnel_id);
+
     let (wireguard_path, _wg_path) = locate_wireguard_tools()?;
+    log::info!("WireGuard 工具路径: {:?}", wireguard_path);
 
     let sanitized_id = sanitize_identifier(tunnel_id);
+    log::info!("清理后的 ID: {}", sanitized_id);
+
     let config_file_name = format!("wgx-{}.conf", sanitized_id);
     let config_path = tunnels_dir.join(config_file_name);
+    log::info!("配置文件路径: {:?}", config_path);
 
     let config_content = build_windows_config_content(tunnel_config, interface_config);
-    std::fs::write(&config_path, config_content)
+    log::debug!("生成的配置内容:\n{}", config_content);
+
+    std::fs::write(&config_path, &config_content)
         .map_err(|e| format!("写入 Windows 配置失败: {}", e))?;
+    log::info!("配置文件已写入");
 
     // 启动前先尝试卸载同名服务，确保重复安装时不会失败
     let expected_service_name = format!("WireGuardTunnel${}", sanitized_id);
+    log::info!("尝试卸载可能存在的旧服务: {}", expected_service_name);
     let _ = stop_wireguard_windows(&expected_service_name, &sanitized_id, Some(&config_path));
 
+    log::info!("执行命令: {:?} /installtunnelservice {:?}", wireguard_path, config_path);
     let output = std::process::Command::new(&wireguard_path)
         .arg("/installtunnelservice")
         .arg(&config_path)
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("执行 wireguard.exe 失败: {}", e))?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("安装隧道服务失败: {}", stderr.trim()));
-    }
+    log::info!("命令执行完成，退出码: {:?}", output.status.code());
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{}\n{}", stdout, stderr);
 
+    log::info!("命令输出 (stdout):\n{}", stdout);
+    if !stderr.is_empty() {
+        log::warn!("命令错误输出 (stderr):\n{}", stderr);
+    }
+
+    if !output.status.success() {
+        log::error!("安装隧道服务失败，退出码: {:?}", output.status.code());
+        return Err(format!("安装隧道服务失败: {}", stderr.trim()));
+    }
+
+    let combined = format!("{}\n{}", stdout, stderr);
     let service_name =
         extract_service_name_from_output(&combined).unwrap_or(expected_service_name.clone());
 
     log::info!(
-        "WireGuard 隧道已安装为服务: {} (配置: {:?})",
+        "✅ WireGuard 隧道已安装为服务: {} (配置: {:?})",
         service_name,
         config_path
     );
+    log::info!("================================================");
 
     Ok(ProcessHandle::WindowsService {
         service_name,
@@ -214,7 +242,12 @@ pub fn stop_wireguard_windows(
     interface_name: &str,
     config_path: Option<&Path>,
 ) -> Result<(), String> {
+    log::info!("========== Windows 停止 WireGuard 隧道 ==========");
+    log::info!("服务名称: {}", service_name);
+    log::info!("接口名称: {}", interface_name);
+
     let (wireguard_path, _) = locate_wireguard_tools()?;
+    log::info!("WireGuard 工具路径: {:?}", wireguard_path);
 
     let mut attempts = vec![service_name.to_string()];
     if let Some(path) = config_path {
@@ -237,22 +270,39 @@ pub fn stop_wireguard_windows(
     let mut seen = HashSet::new();
     attempts.retain(|value| seen.insert(value.clone()));
 
+    log::info!("将尝试卸载以下服务: {:?}", attempts);
+
     let mut last_error: Option<String> = None;
 
-    for target in attempts {
+    for (index, target) in attempts.iter().enumerate() {
+        log::info!("尝试 {}/{}: 卸载服务 {}", index + 1, attempts.len(), target);
+        log::info!("执行命令: {:?} /uninstalltunnelservice {:?}", wireguard_path, target);
+
         let output = std::process::Command::new(&wireguard_path)
             .arg("/uninstalltunnelservice")
-            .arg(&target)
+            .arg(target)
+            .creation_flags(CREATE_NO_WINDOW)
             .output()
             .map_err(|e| format!("执行 wireguard.exe 失败: {}", e))?;
 
-        if output.status.success() {
-            log::info!("已卸载 WireGuard 服务: {}", target);
-            return Ok(());
-        }
+        log::info!("命令执行完成，退出码: {:?}", output.status.code());
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let stderr = String::from_utf8_lossy(&output.stderr);
+
+        if !stdout.is_empty() {
+            log::info!("命令输出 (stdout): {}", stdout.trim());
+        }
+        if !stderr.is_empty() {
+            log::info!("命令输出 (stderr): {}", stderr.trim());
+        }
+
+        if output.status.success() {
+            log::info!("✅ 已卸载 WireGuard 服务: {}", target);
+            log::info!("================================================");
+            return Ok(());
+        }
+
         let message = format!("{}{}", stdout.trim(), stderr.trim());
 
         if message.is_empty()
@@ -262,11 +312,16 @@ pub fn stop_wireguard_windows(
         {
             // 服务不存在，视为成功
             log::info!("WireGuard 服务 {} 已不存在", target);
+            log::info!("================================================");
             return Ok(());
         }
 
+        log::warn!("卸载失败: {}", message);
         last_error = Some(message);
     }
+
+    log::error!("所有卸载尝试均失败");
+    log::info!("================================================");
 
     if let Some(err) = last_error {
         Err(format!(
@@ -306,19 +361,33 @@ fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
 }
 
 pub fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Option<i64>), String> {
+    log::debug!("获取 Windows 接口统计信息: {}", interface);
+
     let (_, wg_path) = locate_wireguard_tools()?;
+    log::debug!("wg.exe 路径: {:?}", wg_path);
+    log::debug!("执行命令: {:?} show {} dump", wg_path, interface);
+
     let output = std::process::Command::new(&wg_path)
         .args(["show", interface, "dump"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
 
+    log::debug!("命令执行完成，退出码: {:?}", output.status.code());
+
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        log::error!("获取接口状态失败: {}", stderr.trim());
         return Err(format!("获取 WireGuard 接口状态失败: {}", stderr.trim()));
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    Ok(parse_windows_dump(&stdout))
+    log::debug!("接口 dump 输出:\n{}", stdout);
+
+    let result = parse_windows_dump(&stdout);
+    log::debug!("解析结果: tx={}, rx={}, last_handshake={:?}", result.0, result.1, result.2);
+
+    Ok(result)
 }
 
 // Windows 实现：配置接口
@@ -334,6 +403,7 @@ pub async fn get_interface_status(interface: String) -> Result<String, String> {
     let (_, wg_path) = locate_wireguard_tools()?;
     let output = std::process::Command::new(&wg_path)
         .args(["show", &interface, "dump"])
+        .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
 
