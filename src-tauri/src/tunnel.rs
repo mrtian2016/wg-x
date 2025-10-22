@@ -1,10 +1,17 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+#[cfg(target_os = "windows")]
+use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::os::unix::net::UnixStream;
 use tauri::Manager;
 use tokio::sync::Mutex;
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+use std::os::unix::net::UnixStream;
+
+#[cfg(target_os = "windows")]
+use std::path::{Path, PathBuf};
 
 use crate::commands::key_management::private_key_to_public;
 
@@ -13,6 +20,12 @@ enum ProcessHandle {
     StdProcess(std::process::Child),
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     PrivilegedProcess(i32), // 存储 PID,用于 macOS 和 Linux 的权限提升进程
+    #[cfg(target_os = "windows")]
+    WindowsService {
+        service_name: String,
+        interface_name: String,
+        config_path: PathBuf,
+    },
 }
 
 impl ProcessHandle {
@@ -25,6 +38,12 @@ impl ProcessHandle {
             ProcessHandle::PrivilegedProcess(pid) => stop_wireguard_macos(*pid),
             #[cfg(target_os = "linux")]
             ProcessHandle::PrivilegedProcess(pid) => stop_wireguard_linux(*pid, tunnel_id),
+            #[cfg(target_os = "windows")]
+            ProcessHandle::WindowsService {
+                service_name,
+                interface_name,
+                config_path,
+            } => stop_wireguard_windows(service_name, interface_name, Some(config_path.as_path())),
         }
     }
 }
@@ -341,6 +360,333 @@ fn start_wireguard_linux_legacy(
     Ok(ProcessHandle::PrivilegedProcess(pid))
 }
 
+// Windows: 使用官方 WireGuard 客户端管理隧道
+#[cfg(target_os = "windows")]
+fn sanitize_identifier(input: &str) -> String {
+    let mut result = String::with_capacity(input.len());
+    for ch in input.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            result.push(ch);
+        } else {
+            result.push('_');
+        }
+    }
+    if result.is_empty() {
+        "wgx_tunnel".to_string()
+    } else {
+        result
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn locate_wireguard_tool(tool_name: &str) -> Option<PathBuf> {
+    if let Some(path_var) = std::env::var_os("PATH") {
+        for path in std::env::split_paths(&path_var) {
+            let candidate = path.join(tool_name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+
+    let mut candidates = Vec::new();
+
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        candidates.push(PathBuf::from(program_files).join("WireGuard"));
+    }
+    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+        candidates.push(PathBuf::from(program_files_x86).join("WireGuard"));
+    }
+
+    candidates.push(PathBuf::from(r"C:\Program Files\WireGuard"));
+    candidates.push(PathBuf::from(r"C:\Program Files (x86)\WireGuard"));
+
+    if let Some(local_app) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local_app).join(r"Programs\WireGuard"));
+    }
+
+    for dir in candidates {
+        let candidate = dir.join(tool_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn locate_wireguard_tools() -> Result<(PathBuf, PathBuf), String> {
+    let wireguard = locate_wireguard_tool("wireguard.exe")
+        .ok_or_else(|| "未找到 wireguard.exe，请先安装官方 WireGuard 客户端".to_string())?;
+    let wg = locate_wireguard_tool("wg.exe")
+        .ok_or_else(|| "未找到 wg.exe，请先安装官方 WireGuard 客户端".to_string())?;
+    Ok((wireguard, wg))
+}
+
+#[cfg(target_os = "windows")]
+fn split_config_values(value: &str) -> Vec<String> {
+    value
+        .split(|c: char| c == ',' || c == ';' || c.is_whitespace())
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn build_windows_config_content(
+    tunnel_config: &TunnelConfig,
+    interface_config: &InterfaceConfig,
+) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    lines.push("[Interface]".to_string());
+    lines.push(format!(
+        "PrivateKey = {}",
+        interface_config.private_key.trim()
+    ));
+
+    for address in split_config_values(&tunnel_config.address) {
+        lines.push(format!("Address = {}", address));
+    }
+
+    if let Some(port) = interface_config.listen_port {
+        lines.push(format!("ListenPort = {}", port));
+    }
+
+    if !tunnel_config.dns.trim().is_empty() {
+        for dns in split_config_values(&tunnel_config.dns) {
+            lines.push(format!("DNS = {}", dns));
+        }
+    }
+
+    if !tunnel_config.mtu.trim().is_empty() {
+        lines.push(format!("MTU = {}", tunnel_config.mtu.trim()));
+    }
+
+    lines.push(String::new());
+
+    for peer in &interface_config.peers {
+        lines.push("[Peer]".to_string());
+        lines.push(format!("PublicKey = {}", peer.public_key.trim()));
+
+        if let Some(ref psk) = peer.preshared_key {
+            if !psk.trim().is_empty() {
+                lines.push(format!("PresharedKey = {}", psk.trim()));
+            }
+        }
+
+        if let Some(ref endpoint) = peer.endpoint {
+            if !endpoint.trim().is_empty() {
+                lines.push(format!("Endpoint = {}", endpoint.trim()));
+            }
+        }
+
+        if !peer.allowed_ips.is_empty() {
+            let ips = peer
+                .allowed_ips
+                .iter()
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .collect::<Vec<_>>()
+                .join(", ");
+            if !ips.is_empty() {
+                lines.push(format!("AllowedIPs = {}", ips));
+            }
+        }
+
+        if let Some(keepalive) = peer.persistent_keepalive {
+            lines.push(format!("PersistentKeepalive = {}", keepalive));
+        }
+
+        lines.push(String::new());
+    }
+
+    lines.join("\r\n")
+}
+
+#[cfg(target_os = "windows")]
+fn extract_service_name_from_output(output: &str) -> Option<String> {
+    if let Some(pos) = output.find("WireGuardTunnel$") {
+        let tail = &output[pos..];
+        let service_name: String = tail
+            .chars()
+            .take_while(|ch| ch.is_ascii_alphanumeric() || *ch == '$' || *ch == '-' || *ch == '_')
+            .collect();
+        if service_name.starts_with("WireGuardTunnel$") {
+            return Some(service_name);
+        }
+    }
+    None
+}
+
+#[cfg(target_os = "windows")]
+fn start_wireguard_windows(
+    tunnel_id: &str,
+    tunnel_config: &TunnelConfig,
+    interface_config: &InterfaceConfig,
+    tunnels_dir: &Path,
+) -> Result<ProcessHandle, String> {
+    let (wireguard_path, _wg_path) = locate_wireguard_tools()?;
+
+    let sanitized_id = sanitize_identifier(tunnel_id);
+    let config_file_name = format!("wgx-{}.conf", sanitized_id);
+    let config_path = tunnels_dir.join(config_file_name);
+
+    let config_content = build_windows_config_content(tunnel_config, interface_config);
+    std::fs::write(&config_path, config_content)
+        .map_err(|e| format!("写入 Windows 配置失败: {}", e))?;
+
+    // 启动前先尝试卸载同名服务，确保重复安装时不会失败
+    let expected_service_name = format!("WireGuardTunnel${}", sanitized_id);
+    let _ = stop_wireguard_windows(&expected_service_name, &sanitized_id, &config_path);
+
+    let output = std::process::Command::new(&wireguard_path)
+        .arg("/installtunnelservice")
+        .arg(&config_path)
+        .output()
+        .map_err(|e| format!("执行 wireguard.exe 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("安装隧道服务失败: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let combined = format!("{}\n{}", stdout, stderr);
+
+    let service_name =
+        extract_service_name_from_output(&combined).unwrap_or(expected_service_name.clone());
+
+    log::info!(
+        "WireGuard 隧道已安装为服务: {} (配置: {:?})",
+        service_name,
+        config_path
+    );
+
+    Ok(ProcessHandle::WindowsService {
+        service_name,
+        interface_name: sanitized_id,
+        config_path,
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn stop_wireguard_windows(
+    service_name: &str,
+    interface_name: &str,
+    config_path: Option<&Path>,
+) -> Result<(), String> {
+    let (wireguard_path, _) = locate_wireguard_tools()?;
+
+    let mut attempts = vec![service_name.to_string()];
+    if let Some(path) = config_path {
+        if let Some(path_str) = path.to_str() {
+            attempts.push(path_str.to_string());
+        }
+    }
+
+    if attempts.len() == 1 {
+        // 当没有配置路径时，额外尝试使用 interface 名称
+        attempts.push(interface_name.to_string());
+    }
+
+    let interface_stop_attempt = format!("WireGuardTunnel${}", interface_name);
+    if interface_stop_attempt != service_name {
+        attempts.push(interface_stop_attempt);
+    }
+
+    // 去重，保持尝试顺序
+    let mut seen = std::collections::HashSet::new();
+    attempts.retain(|value| seen.insert(value.clone()));
+
+    let mut last_error: Option<String> = None;
+
+    for target in attempts {
+        let output = std::process::Command::new(&wireguard_path)
+            .arg("/uninstalltunnelservice")
+            .arg(&target)
+            .output()
+            .map_err(|e| format!("执行 wireguard.exe 失败: {}", e))?;
+
+        if output.status.success() {
+            log::info!("已卸载 WireGuard 服务: {}", target);
+            return Ok(());
+        }
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let message = format!("{}{}", stdout.trim(), stderr.trim());
+
+        if message.is_empty()
+            || message.contains("not found")
+            || message.contains("不存在")
+            || message.contains("未找到")
+        {
+            // 服务不存在，视为成功
+            log::info!("WireGuard 服务 {} 已不存在", target);
+            return Ok(());
+        }
+
+        last_error = Some(message);
+    }
+
+    if let Some(err) = last_error {
+        Err(format!(
+            "卸载 WireGuard 服务 {} 失败: {}",
+            service_name, err
+        ))
+    } else {
+        Err(format!("卸载 WireGuard 服务 {} 失败", service_name))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
+    let mut tx_total = 0u64;
+    let mut rx_total = 0u64;
+    let mut last_handshake: Option<i64> = None;
+
+    for line in dump.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+
+        // Peer 行至少包含 7 列
+        if cols.len() >= 7 {
+            // 常见格式: public_key, preshared, endpoint, allowed_ips, tx, rx, last_handshake, [nsec], persistent
+            let tx = cols.get(4).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            let rx = cols.get(5).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+            tx_total = tx_total.saturating_add(tx);
+            rx_total = rx_total.saturating_add(rx);
+
+            if let Some(sec) = cols.get(6).and_then(|v| v.parse::<i64>().ok()) {
+                if sec > 0 {
+                    last_handshake = Some(sec);
+                }
+            }
+        }
+    }
+
+    (tx_total, rx_total, last_handshake)
+}
+
+#[cfg(target_os = "windows")]
+fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Option<i64>), String> {
+    let (_, wg_path) = locate_wireguard_tools()?;
+    let output = std::process::Command::new(&wg_path)
+        .args(["show", interface, "dump"])
+        .output()
+        .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("获取 WireGuard 接口状态失败: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(parse_windows_dump(&stdout))
+}
+
 // 停止 Linux 隧道 (守护进程方式)
 #[cfg(target_os = "linux")]
 fn stop_wireguard_linux(pid: i32, tunnel_id: &str) -> Result<(), String> {
@@ -411,7 +757,25 @@ fn interface_exists(name: &str) -> bool {
         }
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok((_, wg_path)) = locate_wireguard_tools() {
+            if let Ok(output) = std::process::Command::new(&wg_path)
+                .args(["show", "interfaces"])
+                .output()
+            {
+                if output.status.success() {
+                    let stdout = String::from_utf8_lossy(&output.stdout);
+                    return stdout
+                        .split_whitespace()
+                        .any(|iface| iface.eq_ignore_ascii_case(name));
+                }
+            }
+        }
+        false
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         false
     }
@@ -424,13 +788,18 @@ fn interface_exists(name: &str) -> bool {
 // 使用 tunnel_id 的哈希确保同一个隧道总是使用相同的接口名
 // 注意: 此函数只生成名称,不检查接口是否存在,由调用方负责检查和处理
 fn generate_interface_name(tunnel_id: &str) -> String {
+    #[cfg(target_os = "windows")]
+    {
+        return sanitize_identifier(tunnel_id);
+    }
+
     #[cfg(target_os = "macos")]
     let prefix = "utun";
 
     #[cfg(target_os = "linux")]
     let prefix = "tun";
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     let prefix = "wg";
 
     // 使用简单的哈希算法计算 tunnel_id 的哈希值
@@ -557,6 +926,7 @@ pub struct TunnelStatus {
 }
 
 // 配置接口（通过 UAPI）
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tauri::command]
 pub async fn configure_interface(
     interface: String,
@@ -694,7 +1064,17 @@ pub async fn configure_interface(
     .map_err(|e| format!("任务执行失败: {}", e))?
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn configure_interface(
+    _interface: String,
+    _config: InterfaceConfig,
+) -> Result<String, String> {
+    Err("Windows 平台由官方 WireGuard 客户端管理配置，暂不支持通过应用直接下发".to_string())
+}
+
 // 添加 Peer
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tauri::command]
 pub async fn add_peer(interface: String, peer: PeerConfig) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
@@ -744,7 +1124,14 @@ pub async fn add_peer(interface: String, peer: PeerConfig) -> Result<String, Str
     }
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn add_peer(_interface: String, _peer: PeerConfig) -> Result<String, String> {
+    Err("Windows 平台请通过 GUI 重新生成配置后重新安装隧道".to_string())
+}
+
 // 移除 Peer
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tauri::command]
 pub async fn remove_peer(interface: String, public_key: String) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
@@ -772,7 +1159,14 @@ pub async fn remove_peer(interface: String, public_key: String) -> Result<String
     }
 }
 
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn remove_peer(_interface: String, _public_key: String) -> Result<String, String> {
+    Err("Windows 平台请重新安装隧道以更新 Peer 配置".to_string())
+}
+
 // 获取接口状态
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[tauri::command]
 pub async fn get_interface_status(interface: String) -> Result<String, String> {
     let socket_path = format!("/var/run/wireguard/{}.sock", interface);
@@ -824,6 +1218,23 @@ pub async fn get_interface_status(interface: String) -> Result<String, String> {
     })
     .await
     .map_err(|e| format!("任务执行失败: {}", e))?
+}
+
+#[cfg(target_os = "windows")]
+#[tauri::command]
+pub async fn get_interface_status(interface: String) -> Result<String, String> {
+    let (_, wg_path) = locate_wireguard_tools()?;
+    let output = std::process::Command::new(&wg_path)
+        .args(["show", &interface, "dump"])
+        .output()
+        .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!("获取 WireGuard 状态失败: {}", stderr.trim()))
+    } else {
+        Ok(String::from_utf8_lossy(&output.stdout).to_string())
+    }
 }
 
 // 配置路由表 (macOS)
@@ -1020,16 +1431,23 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         }
     }
 
+    let tunnels_dir = config_file
+        .parent()
+        .ok_or_else(|| "隧道配置目录不存在".to_string())?;
+
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     // 获取 wireguard-go sidecar 的路径
     let sidecar_path = app
         .path()
         .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
         .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?;
 
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     let sidecar_path_str = sidecar_path
         .to_str()
         .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
 
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
     log::debug!("wireguard-go 路径: {}", sidecar_path_str);
 
     // macOS: 一次性权限请求，完成所有配置（包括路由）
@@ -1099,6 +1517,21 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         // 如果需要支持动态域名，应该在守护进程内部实现 endpoint 刷新逻辑
 
         log::info!("隧道启动完成: {}", interface_name);
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        let process_handle =
+            start_wireguard_windows(&tunnel_id, &tunnel_config, &interface_config, tunnels_dir)
+                .map_err(|e| format!("启动隧道失败: {}", e))?;
+
+        {
+            let mut processes = TUNNEL_PROCESSES.lock().await;
+            processes.insert(tunnel_id.clone(), process_handle);
+        }
+
+        log::info!("隧道启动完成: {}", tunnel_config.name);
         return Ok(());
     }
 
@@ -1255,6 +1688,21 @@ pub async fn stop_tunnel(tunnel_id: String) -> Result<(), String> {
             }
         }
 
+        #[cfg(target_os = "windows")]
+        {
+            let sanitized_id = sanitize_identifier(&tunnel_id);
+            let service_name = format!("WireGuardTunnel${}", sanitized_id);
+            match stop_wireguard_windows(&service_name, &sanitized_id, None) {
+                Ok(_) => {
+                    log::info!("已尝试卸载 Windows WireGuard 服务 {}", service_name);
+                    return Ok(());
+                }
+                Err(e) => {
+                    log::warn!("卸载 Windows WireGuard 服务失败: {}", e);
+                }
+            }
+        }
+
         Err("隧道未运行".to_string())
     }
 }
@@ -1329,6 +1777,12 @@ pub async fn get_tunnel_details(
                 .await
                 .unwrap_or_default();
             parse_interface_status(&status_str)
+        }
+
+        // Windows: 通过官方 wg.exe 获取统计信息
+        #[cfg(target_os = "windows")]
+        {
+            get_windows_interface_counters(&interface_name).unwrap_or((0, 0, None))
         }
     } else {
         (0, 0, None)
@@ -1699,6 +2153,12 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                                         }
                                     }
                                 }
+
+                                #[cfg(target_os = "windows")]
+                                {
+                                    get_windows_interface_counters(&interface_name)
+                                        .unwrap_or((0, 0, None))
+                                }
                             } else {
                                 (0, 0, None)
                             };
@@ -1769,6 +2229,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
 // 定期更新 endpoint 的后台任务
 // 用于处理动态域名(DDNS)的情况
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
     tokio::spawn(async move {
         // 每 2 分钟检查一次 endpoint
@@ -1901,4 +2362,9 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
             }
         }
     });
+}
+
+#[cfg(target_os = "windows")]
+pub fn start_endpoint_refresh_task(_tunnel_id: String, _interface: String) {
+    // Windows 平台由官方 WireGuard 服务处理 DNS 解析，暂不需要后台刷新任务
 }
