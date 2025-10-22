@@ -10,6 +10,34 @@ use crate::tunnel::{InterfaceConfig, ProcessHandle, TunnelConfig, TUNNEL_PROCESS
 // 用于隐藏控制台窗口
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
+// 检查当前进程是否拥有管理员权限（Windows）
+fn is_windows_elevated() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        // 方案：调用 whoami /groups，检测 Administrators 组 (S-1-5-32-544) 是否为 Enabled group。
+        // 注意：在 UAC 未提升的情况下，即便用户属于管理员组，该标识通常不会被启用。
+        if let Ok(output) = std::process::Command::new("whoami")
+            .arg("/groups")
+            .creation_flags(CREATE_NO_WINDOW)
+            .output()
+        {
+            if output.status.success() {
+                let text = String::from_utf8_lossy(&output.stdout);
+                // 简单匹配管理员 SID 并包含 Enabled 关键字（避免本地化影响尽量小）
+                // 仍可能受系统语言影响，但对常见英文/中文环境通常可用。
+                let has_admin_sid = text.contains("S-1-5-32-544");
+                let enabled = text.to_ascii_lowercase().contains("enabled");
+                return has_admin_sid && enabled;
+            }
+        }
+        false
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        true
+    }
+}
+
 // Windows 工具函数：清理标识符
 // WireGuard 要求隧道名称必须以字母开头，只能包含字母、数字、下划线和连字符
 pub fn sanitize_identifier(input: &str) -> String {
@@ -178,6 +206,9 @@ pub fn start_wireguard_windows(
     interface_config: &InterfaceConfig,
     tunnels_dir: &Path,
 ) -> Result<ProcessHandle, String> {
+    if !is_windows_elevated() {
+        return Err("需要以管理员权限运行以启动隧道".to_string());
+    }
     log::info!("========== Windows 启动 WireGuard 隧道 ==========");
     log::info!("隧道 ID: {}", tunnel_id);
 
@@ -249,6 +280,9 @@ pub fn stop_wireguard_windows(
     interface_name: &str,
     config_path: Option<&Path>,
 ) -> Result<(), String> {
+    if !is_windows_elevated() {
+        return Err("需要以管理员权限运行以停止隧道".to_string());
+    }
     log::info!("========== Windows 停止 WireGuard 隧道 ==========");
     log::info!("服务名称: {}", service_name);
     log::info!("接口名称: {}", interface_name);
