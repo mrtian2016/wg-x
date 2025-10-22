@@ -3,6 +3,14 @@ mod sync;
 mod tunnel;
 mod webdav;
 
+// 平台特定的 tunnel 模块
+#[cfg(target_os = "macos")]
+mod tunnel_macos;
+#[cfg(target_os = "linux")]
+mod tunnel_linux;
+#[cfg(target_os = "windows")]
+mod tunnel_windows;
+
 use chrono::Local;
 use tauri::Manager;
 #[cfg(target_os = "macos")]
