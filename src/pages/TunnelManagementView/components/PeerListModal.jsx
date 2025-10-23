@@ -31,16 +31,16 @@ function PeerListModal({ tunnel, onClose, onViewPeerConfig, formatBytes, formatT
                   </div>
                   <div className="peer-list-item-body">
                     <div className="detail-group">
-                      <label>上传流量:</label>
-                      <div>{formatBytes ? formatBytes(peer.tx_bytes || 0) : '0 B'}</div>
+                      
+                      <div><label>上传流量:</label>{formatBytes ? formatBytes(peer.tx_bytes || 0) : '0 B'}</div>
                     </div>
                     <div className="detail-group">
-                      <label>下载流量:</label>
-                      <div>{formatBytes ? formatBytes(peer.rx_bytes || 0) : '0 B'}</div>
+                      
+                      <div><label>下载流量:</label>{formatBytes ? formatBytes(peer.rx_bytes || 0) : '0 B'}</div>
                     </div>
                     <div className="detail-group">
-                      <label>上次握手:</label>
-                      <div>{formatTime ? formatTime(peer.last_handshake) : '从未'}</div>
+                      
+                      <div><label>上次握手:</label>{formatTime ? formatTime(peer.last_handshake) : '从未'}</div>
                     </div>
                   </div>
                 </div>
