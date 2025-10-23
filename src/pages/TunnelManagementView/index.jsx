@@ -28,15 +28,19 @@ function TunnelManagementView({ onShowToast }) {
   // 配置表单状态
   const [config, setConfig] = useState({
     name: '',
+    mode: '', // 'server' 或 'client'
     // Interface 配置
     privateKey: '',
     address: '',
     listenPort: '',
     dns: '',
     mtu: '1420',
-    // Peer 配置 - 支持多个 Peer
+    // Peer 配置 - 支持多个 Peer (服务端) 或单个 Peer (客户端)
     peers: [],
   });
+
+  // 模式选择对话框状态
+  const [showModeSelector, setShowModeSelector] = useState(false);
 
   // 检测操作系统
   useEffect(() => {
@@ -181,6 +185,10 @@ function TunnelManagementView({ onShowToast }) {
         onShowToast('请输入隧道名称', 'warning');
         return;
       }
+      if (!config.mode) {
+        onShowToast('请选择运行模式', 'warning');
+        return;
+      }
       if (!config.privateKey) {
         onShowToast('请生成或输入私钥', 'warning');
         return;
@@ -191,14 +199,26 @@ function TunnelManagementView({ onShowToast }) {
       }
 
       // 验证 Peer 配置
+      if (config.peers.length === 0) {
+        onShowToast(config.mode === 'server' ? '请至少添加一个 Peer' : '请配置要连接的服务端', 'warning');
+        return;
+      }
+
       for (let i = 0; i < config.peers.length; i++) {
         const peer = config.peers[i];
         if (!peer.publicKey) {
-          onShowToast(`Peer ${i + 1}: 请输入对端公钥`, 'warning');
+          const peerLabel = config.mode === 'server' ? `Peer ${i + 1}` : '服务端';
+          onShowToast(`${peerLabel}: 请输入公钥`, 'warning');
           return;
         }
         if (!peer.allowedIps) {
-          onShowToast(`Peer ${i + 1}: 请输入 AllowedIPs`, 'warning');
+          const peerLabel = config.mode === 'server' ? `Peer ${i + 1}` : '服务端';
+          onShowToast(`${peerLabel}: 请输入 AllowedIPs`, 'warning');
+          return;
+        }
+        // 客户端模式必须配置 Endpoint
+        if (config.mode === 'client' && !peer.endpoint) {
+          onShowToast('请输入服务端地址 (Endpoint)', 'warning');
           return;
         }
       }
@@ -209,6 +229,7 @@ function TunnelManagementView({ onShowToast }) {
       const tunnelConfig = {
         id: editingConfig ? editingConfig.id : Date.now().toString(),
         name: config.name,
+        mode: config.mode, // 保存模式信息
         private_key: config.privateKey,
         address: config.address,
         listen_port: String(config.listenPort || ''), // 确保是字符串
@@ -246,6 +267,7 @@ function TunnelManagementView({ onShowToast }) {
   const resetForm = () => {
     setConfig({
       name: '',
+      mode: '',
       privateKey: '',
       address: '',
       listenPort: '',
@@ -255,6 +277,7 @@ function TunnelManagementView({ onShowToast }) {
     });
     setLocalPublicKey('');
     setEditingConfig(null);
+    setShowModeSelector(false);
   };
 
   // 编辑隧道配置
@@ -287,6 +310,7 @@ function TunnelManagementView({ onShowToast }) {
 
       setConfig({
         name: fullConfig.name,
+        mode: fullConfig.mode || 'server', // 默认为 server 模式
         privateKey: fullConfig.private_key || '',
         address: fullConfig.address || '',
         listenPort: fullConfig.listen_port || '',
@@ -409,7 +433,7 @@ function TunnelManagementView({ onShowToast }) {
         <button
           onClick={() => {
             resetForm();
-            setShowConfigForm(true);
+            setShowModeSelector(true);
           }}
           className="btn-primary"
           disabled={loading}
@@ -565,11 +589,32 @@ function TunnelManagementView({ onShowToast }) {
                     placeholder="例如: 我的 VPN"
                   />
                 </div>
+                {!editingConfig && (
+                  <div className="form-group">
+                    <label>运行模式 *</label>
+                    <div className="mode-display">
+                      <span className="mode-badge" data-mode={config.mode}>
+                        {config.mode === 'server' ? '🖥️ 服务端' : config.mode === 'client' ? '💻 客户端' : '未选择'}
+                      </span>
+                      <small>创建后无法修改模式，请谨慎选择</small>
+                    </div>
+                  </div>
+                )}
+                {editingConfig && (
+                  <div className="form-group">
+                    <label>运行模式</label>
+                    <div className="mode-display">
+                      <span className="mode-badge" data-mode={config.mode}>
+                        {config.mode === 'server' ? '🖥️ 服务端' : config.mode === 'client' ? '💻 客户端' : '🖥️ 服务端'}
+                      </span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Interface 配置 */}
               <div className="config-section">
-                <h4>Interface (客户端)</h4>
+                <h4>Interface (本机)</h4>
 
                 <div className="form-group">
                   <label>私钥 *</label>
@@ -657,110 +702,224 @@ function TunnelManagementView({ onShowToast }) {
                 </div>
               </div>
 
-              {/* Peer 配置 - 支持多个 */}
-              <div className="config-section">
-                <div className="peer-section-header">
-                  <div className="peer-section-header-content">
-                    <h4>Peer (对端配置)</h4>
-                    <small>
-                      如果作为服务端运行，可以不添加 Peer，等待客户端连接
-                    </small>
+              {/* Peer 配置 - 根据模式显示不同的 UI */}
+              {config.mode && (
+                <div className="config-section">
+                  <div className="peer-section-header">
+                    <div className="peer-section-header-content">
+                      <h4>Peer (对端配置)</h4>
+                      <small>
+                        {config.mode === 'server'
+                          ? '作为服务端时，需要预先配置 Peer，以建立加密隧道并验证客户端身份'
+                          : config.mode === 'client'
+                          ? '作为客户端时，配置要连接的服务端信息'
+                          : ''}
+                      </small>
+                    </div>
+                    {config.mode === 'server' && (
+                      <button
+                        onClick={handleAddPeer}
+                        className="btn-inline"
+                        type="button"
+                      >
+                        + 添加 Peer
+                      </button>
+                    )}
                   </div>
-                  <button
-                    onClick={handleAddPeer}
-                    className="btn-inline"
-                    type="button"
-                  >
-                    + 添加 Peer
-                  </button>
-                </div>
 
-                {config.peers.length === 0 ? (
-                  <div className="peer-empty-state">
-                    <p>暂无 Peer 配置</p>
-                    <small>点击"添加 Peer"按钮添加对端配置</small>
-                  </div>
-                ) : (
-                  config.peers.map((peer, index) => (
-                    <div key={index} className="peer-config-group">
-                      <div className="peer-config-header">
-                        <h5>Peer {index + 1}</h5>
-                        <button
-                          onClick={() => handleRemovePeer(index)}
-                          className="btn-danger-outline peer-config-delete-btn"
-                          type="button"
-                        >
-                          删除
-                        </button>
+                {/* 服务端模式：支持多个 Peer */}
+                {config.mode === 'server' && (
+                  <>
+                    {config.peers.length === 0 ? (
+                      <div className="peer-empty-state">
+                        <p>暂无 Peer 配置</p>
+                        <small>点击"添加 Peer"按钮添加对端配置</small>
                       </div>
+                    ) : (
+                      config.peers.map((peer, index) => (
+                        <div key={index} className="peer-config-group">
+                          <div className="peer-config-header">
+                            <h5>Peer {index + 1}</h5>
+                            <button
+                              onClick={() => handleRemovePeer(index)}
+                              className="btn-danger-outline peer-config-delete-btn"
+                              type="button"
+                            >
+                              删除
+                            </button>
+                          </div>
 
-                      <div className="form-group">
-                        <label>对端公钥 *</label>
-                        <input
-                          type="text"
-                          value={peer.publicKey}
-                          onChange={(e) => handleUpdatePeer(index, 'publicKey', e.target.value)}
-                          placeholder="输入对端的公钥"
-                          className="monospace-input"
-                        />
+                          <div className="form-group">
+                            <label>对端公钥 *</label>
+                            <input
+                              type="text"
+                              value={peer.publicKey}
+                              onChange={(e) => handleUpdatePeer(index, 'publicKey', e.target.value)}
+                              placeholder="输入对端的公钥"
+                              className="monospace-input"
+                            />
+                          </div>
+
+                          <div className="form-group">
+                            <label>预共享密钥 (可选)</label>
+                            <div className="input-with-button">
+                              <input
+                                type="text"
+                                value={peer.presharedKey}
+                                onChange={(e) => handleUpdatePeer(index, 'presharedKey', e.target.value)}
+                                placeholder="点击生成或手动输入"
+                                className="monospace-input"
+                              />
+                              <button
+                                onClick={() => handleGeneratePresharedKey(index)}
+                                className="btn-inline"
+                                type="button"
+                              >
+                                生成 PSK
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="form-group">
+                            <label>对端地址 (Endpoint)</label>
+                            <input
+                              type="text"
+                              value={peer.endpoint}
+                              onChange={(e) => handleUpdatePeer(index, 'endpoint', e.target.value)}
+                              placeholder="例如: vpn.example.com:51820"
+                            />
+                            <small>格式: 域名或IP:端口</small>
+                          </div>
+
+                          <div className="form-group">
+                            <label>允许的 IP (AllowedIPs) *</label>
+                            <input
+                              type="text"
+                              value={peer.allowedIps}
+                              onChange={(e) => handleUpdatePeer(index, 'allowedIps', e.target.value)}
+                              placeholder="0.0.0.0/0"
+                            />
+                            <small>0.0.0.0/0 表示所有流量,多个IP用逗号分隔</small>
+                          </div>
+
+                          <div className="form-group">
+                            <label>保持连接 (PersistentKeepalive)</label>
+                            <input
+                              type="number"
+                              value={peer.persistentKeepalive}
+                              onChange={(e) => handleUpdatePeer(index, 'persistentKeepalive', parseInt(e.target.value) || 0)}
+                              placeholder="25"
+                            />
+                            <small>NAT 穿透保持连接间隔(秒), 0 表示禁用</small>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </>
+                )}
+
+                {/* 客户端模式：单个 Peer */}
+                {config.mode === 'client' && (
+                  <>
+                    {config.peers.length === 0 ? (
+                      <div className="peer-empty-state">
+                        <p>暂无服务端配置</p>
+                        <small>点击下方"添加服务端"按钮配置要连接的服务端</small>
                       </div>
+                    ) : (
+                      <div className="peer-config-group">
+                        <div className="peer-config-header">
+                          <h5>连接的服务端</h5>
+                          {config.peers.length > 0 && (
+                            <button
+                              onClick={() => handleRemovePeer(0)}
+                              className="btn-danger-outline peer-config-delete-btn"
+                              type="button"
+                            >
+                              删除
+                            </button>
+                          )}
+                        </div>
 
-                      <div className="form-group">
-                        <label>预共享密钥 (可选)</label>
-                        <div className="input-with-button">
+                        <div className="form-group">
+                          <label>服务端公钥 *</label>
                           <input
                             type="text"
-                            value={peer.presharedKey}
-                            onChange={(e) => handleUpdatePeer(index, 'presharedKey', e.target.value)}
-                            placeholder="点击生成或手动输入"
+                            value={config.peers[0]?.publicKey || ''}
+                            onChange={(e) => handleUpdatePeer(0, 'publicKey', e.target.value)}
+                            placeholder="输入服务端的公钥"
                             className="monospace-input"
                           />
-                          <button
-                            onClick={() => handleGeneratePresharedKey(index)}
-                            className="btn-inline"
-                            type="button"
-                          >
-                            生成 PSK
-                          </button>
+                        </div>
+
+                        <div className="form-group">
+                          <label>预共享密钥 (可选)</label>
+                          <div className="input-with-button">
+                            <input
+                              type="text"
+                              value={config.peers[0]?.presharedKey || ''}
+                              onChange={(e) => handleUpdatePeer(0, 'presharedKey', e.target.value)}
+                              placeholder="点击生成或手动输入"
+                              className="monospace-input"
+                            />
+                            <button
+                              onClick={() => handleGeneratePresharedKey(0)}
+                              className="btn-inline"
+                              type="button"
+                            >
+                              生成 PSK
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="form-group">
+                          <label>服务端地址 (Endpoint) *</label>
+                          <input
+                            type="text"
+                            value={config.peers[0]?.endpoint || ''}
+                            onChange={(e) => handleUpdatePeer(0, 'endpoint', e.target.value)}
+                            placeholder="例如: vpn.example.com:51820"
+                          />
+                          <small>格式: 域名或IP:端口</small>
+                        </div>
+
+                        <div className="form-group">
+                          <label>允许的 IP (AllowedIPs) *</label>
+                          <input
+                            type="text"
+                            value={config.peers[0]?.allowedIps || '0.0.0.0/0'}
+                            onChange={(e) => handleUpdatePeer(0, 'allowedIps', e.target.value)}
+                            placeholder="0.0.0.0/0"
+                          />
+                          <small>0.0.0.0/0 表示通过此 VPN 路由所有流量</small>
+                        </div>
+
+                        <div className="form-group">
+                          <label>保持连接 (PersistentKeepalive)</label>
+                          <input
+                            type="number"
+                            value={config.peers[0]?.persistentKeepalive || 25}
+                            onChange={(e) => handleUpdatePeer(0, 'persistentKeepalive', parseInt(e.target.value) || 0)}
+                            placeholder="25"
+                          />
+                          <small>NAT 穿透保持连接间隔(秒), 建议设置为 25 秒</small>
                         </div>
                       </div>
-
-                      <div className="form-group">
-                        <label>对端地址 (Endpoint)</label>
-                        <input
-                          type="text"
-                          value={peer.endpoint}
-                          onChange={(e) => handleUpdatePeer(index, 'endpoint', e.target.value)}
-                          placeholder="例如: vpn.example.com:51820"
-                        />
-                        <small>格式: 域名或IP:端口</small>
-                      </div>
-
-                      <div className="form-group">
-                        <label>允许的 IP (AllowedIPs) *</label>
-                        <input
-                          type="text"
-                          value={peer.allowedIps}
-                          onChange={(e) => handleUpdatePeer(index, 'allowedIps', e.target.value)}
-                          placeholder="0.0.0.0/0"
-                        />
-                        <small>0.0.0.0/0 表示所有流量,多个IP用逗号分隔</small>
-                      </div>
-
-                      <div className="form-group">
-                        <label>保持连接 (PersistentKeepalive)</label>
-                        <input
-                          type="number"
-                          value={peer.persistentKeepalive}
-                          onChange={(e) => handleUpdatePeer(index, 'persistentKeepalive', parseInt(e.target.value) || 0)}
-                          placeholder="25"
-                        />
-                        <small>NAT 穿透保持连接间隔(秒), 0 表示禁用</small>
-                      </div>
-                    </div>
-                  ))
+                    )}
+                    {config.peers.length === 0 && (
+                      <button
+                        onClick={handleAddPeer}
+                        className="btn-primary"
+                        style={{ width: '100%', marginTop: '1rem' }}
+                        type="button"
+                      >
+                        + 添加服务端
+                      </button>
+                    )}
+                  </>
                 )}
-              </div>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button
@@ -851,6 +1010,54 @@ function TunnelManagementView({ onShowToast }) {
               >
                 关闭
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 隧道模式选择对话框 */}
+      {showModeSelector && (
+        <div className="modal-overlay" onClick={() => setShowModeSelector(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>选择隧道运行模式</h3>
+              <button
+                onClick={() => setShowModeSelector(false)}
+                className="btn-close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '2rem', color: '#666', fontSize: '0.95rem' }}>
+                请选择隧道的运行模式。创建后无法修改，请谨慎选择。
+              </p>
+              <div className="mode-selector">
+                <button
+                  onClick={() => {
+                    setConfig({ ...config, mode: 'server' });
+                    setShowModeSelector(false);
+                    setShowConfigForm(true);
+                  }}
+                  className="mode-option-btn"
+                >
+                  <div className="mode-option-icon">🖥️</div>
+                  <div className="mode-option-title">服务端模式</div>
+                  <div className="mode-option-desc">作为 VPN 服务端，管理多个客户端连接</div>
+                </button>
+                <button
+                  onClick={() => {
+                    setConfig({ ...config, mode: 'client' });
+                    setShowModeSelector(false);
+                    setShowConfigForm(true);
+                  }}
+                  className="mode-option-btn"
+                >
+                  <div className="mode-option-icon">💻</div>
+                  <div className="mode-option-title">客户端模式</div>
+                  <div className="mode-option-desc">作为 VPN 客户端，连接到一个服务端</div>
+                </button>
+              </div>
             </div>
           </div>
         </div>
