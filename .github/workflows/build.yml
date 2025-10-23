@@ -60,7 +60,7 @@ jobs:
           targets: ${{ matrix.platform.rust_target }}
 
       - name: Install frontend dependencies
-        run: yarn install
+        run: npm install
 
       - name: Build Tauri app
         uses: tauri-apps/tauri-action@v0
@@ -70,7 +70,7 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'WireGuard配置生成器 ${{ github.ref_name }}'
+          releaseName: 'WG-X ${{ github.ref_name }}'
           releaseBody: |
             ## 下载说明
             - **Windows**: 下载 `.msi` 或 `.exe` 安装包
