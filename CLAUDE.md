@@ -4,6 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 每次请用中文回答我。
 
+不要主动帮我提交代码。
+
+不要每次生成说明文档。
+
 ## 项目概述
 
 这是一个基于 Tauri 2 + React 19 + Vite 7 的桌面应用程序项目，名为 wg-x。

@@ -4,7 +4,7 @@ import { useToast } from '../../hooks/useToast';
 import Toast from '../../components/Toast';
 import './style.css';
 
-function WebDavSettingsView({ onBack, onConfigChange }) {
+function WebDavSettingsView({  onConfigChange }) {
   const { messages, showToast, removeToast } = useToast();
   const [config, setConfig] = useState({
     enabled: false,
@@ -190,10 +190,7 @@ function WebDavSettingsView({ onBack, onConfigChange }) {
 
       <div className="webdav-settings-view">
         <div className="webdav-header">
-          <h2>☁️ WebDAV 同步设置</h2>
-          <button className="webdav-back-button" onClick={onBack}>
-            ← 返回
-          </button>
+          <h2>WebDAV 同步设置</h2>
         </div>
 
         <div className="webdav-content">

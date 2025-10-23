@@ -13,9 +13,11 @@ pub struct ServerConfig {
     pub endpoint: String,
     pub allowed_ips: String,
     pub persistent_keepalive: String,
-    pub ikuai_interface: String,
+    pub peer_interface: String,
     pub next_peer_id: u32,
     pub created_at: i64,
+    #[serde(default)]
+    pub peer_address_range: String,
 }
 
 #[command]
@@ -218,9 +220,10 @@ pub fn migrate_old_config_to_server(app: AppHandle) -> Result<Option<String>, St
         endpoint: old_config.endpoint,
         allowed_ips: old_config.allowed_ips,
         persistent_keepalive: old_config.persistent_keepalive,
-        ikuai_interface: old_config.ikuai_interface,
+        peer_interface: old_config.peer_interface,
         next_peer_id: old_config.next_peer_id,
         created_at: timestamp,
+        peer_address_range: String::new(),
     };
 
     save_server_config(app.clone(), server_config)?;

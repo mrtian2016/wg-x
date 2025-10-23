@@ -46,7 +46,7 @@ function HistoryDetailModal({
     onSavePeerConfig: async () => {
       await handleSaveConfig(
         history.ikuai_config,
-        `${history.ikuai_comment}_peer.txt`,
+        `${history.peer_comment}_peer.txt`,
         'Peer 配置',
         ['txt']
       );
@@ -57,7 +57,7 @@ function HistoryDetailModal({
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>{history.ikuai_comment} 配置详情</h3>
+          <h3>{history.peer_comment} 配置详情</h3>
           <button className="modal-close-btn" onClick={onClose}>
             ✕
           </button>

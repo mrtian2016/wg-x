@@ -570,7 +570,7 @@ function TunnelManagementView({ onShowToast }) {
 
               {/* Interface 配置 */}
               <div className="config-section">
-                <h4>Interface (本地接口)</h4>
+                <h4>Interface (客户端)</h4>
 
                 <div className="form-group">
                   <label>私钥 *</label>

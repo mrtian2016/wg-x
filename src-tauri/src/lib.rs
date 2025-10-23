@@ -124,6 +124,7 @@ pub fn run() {
             commands::server_service::update_server_peer_id,
             commands::history_service::get_history_list_by_server,
             commands::server_service::migrate_old_config_to_server,
+            commands::history_service::generate_next_client_ip,
             commands::webdav_commands::save_webdav_config,
             commands::webdav_commands::load_webdav_config,
             commands::webdav_commands::test_webdav_connection,

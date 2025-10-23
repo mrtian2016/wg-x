@@ -14,9 +14,9 @@ pub struct WgConfig {
     pub endpoint: String,
     pub allowed_ips: String,
     pub persistent_keepalive: Option<String>,
-    pub ikuai_id: u32,
-    pub ikuai_interface: String,
-    pub ikuai_comment: String,
+    pub peer_id: u32,
+    pub peer_interface: String,
+    pub peer_comment: String,
 }
 
 #[command]
@@ -76,9 +76,9 @@ pub fn generate_ikuai_config(config: WgConfig, _work_dir: String) -> Result<Stri
 
     let ikuai_line = format!(
         "id={} enabled=yes comment={} interface={} peer_publickey={} presharedkey={} allowips={} endpoint= endpoint_port= keepalive={}",
-        config.ikuai_id,
-        config.ikuai_comment,
-        config.ikuai_interface,
+        config.peer_id,
+        config.peer_comment,
+        config.peer_interface,
         public_key,
         psk,
         config.address,
@@ -138,10 +138,10 @@ pub fn generate_mikrotik_config(config: WgConfig, _work_dir: String) -> Result<S
 
     let mut command = format!(
         "/interface/wireguard/peers/add \\\n  interface={} \\\n  public-key=\"{}\" \\\n  allowed-address={} \\\n  comment=\"{}\"",
-        config.ikuai_interface,
+        config.peer_interface,
         public_key,
         allowed_address,
-        config.ikuai_comment
+        config.peer_comment
     );
 
     if let Some(psk) = &config.preshared_key {
@@ -192,7 +192,7 @@ pub fn generate_openwrt_config(config: WgConfig, _work_dir: String) -> Result<St
 
     commands.push_str(&format!(
         "uci set network.@{}[-1].description='{}'\n",
-        section_name, config.ikuai_comment
+        section_name, config.peer_comment
     ));
 
     commands.push_str("# 提交配置\n");

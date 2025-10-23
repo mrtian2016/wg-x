@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import ConfirmDialog from "../../components/ConfirmDialog";
 
 function ServerManagementView({
-  onBack,
   onShowToast,
 }) {
   const [serverList, setServerList] = useState([]);
@@ -26,8 +25,9 @@ function ServerManagementView({
     endpoint: "",
     allowed_ips: "0.0.0.0/0,::/0",
     persistent_keepalive: "25",
-    ikuai_interface: "wg_0",
+    peer_interface: "wg_0",
     next_peer_id: 1,
+    peer_address_range: "",
   });
 
   // 加载服务端列表
@@ -66,8 +66,9 @@ function ServerManagementView({
       endpoint: "",
       allowed_ips: "0.0.0.0/0,::/0",
       persistent_keepalive: "25",
-      ikuai_interface: "wg_0",
+      peer_interface: "wg_0",
       next_peer_id: 1,
+      peer_address_range: "",
     });
     setIsEditing(false);
     setShowForm(true);
@@ -83,8 +84,9 @@ function ServerManagementView({
       endpoint: server.endpoint,
       allowed_ips: server.allowed_ips,
       persistent_keepalive: server.persistent_keepalive,
-      ikuai_interface: server.ikuai_interface,
+      peer_interface: server.peer_interface,
       next_peer_id: server.next_peer_id,
+      peer_address_range: server.peer_address_range || "",
     });
     setIsEditing(true);
     setShowForm(true);
@@ -183,9 +185,29 @@ function ServerManagementView({
     }
 
     // 验证接口名称不包含空格
-    if (formData.ikuai_interface.includes(" ")) {
-      onShowToast("路由器接口名称不允许包含空格", "warning");
+    if (formData.peer_interface.includes(" ")) {
+      onShowToast("接口名称不允许包含空格", "warning");
       return;
+    }
+
+    // 验证 Peer 地址范围（如果提供了）
+    if (formData.peer_address_range.trim()) {
+      if (formData.peer_address_range.includes(" ")) {
+        onShowToast("Peer 地址范围不允许包含空格", "warning");
+        return;
+      }
+      // CIDR 格式验证: IP/掩码
+      const peerAddrRegex = /^([0-9]{1,3}\.){3}[0-9]{1,3}\/([0-9]{1,2})$/;
+      if (!peerAddrRegex.test(formData.peer_address_range)) {
+        onShowToast("Peer 地址范围格式不正确，应为 IP/掩码（例如: 10.2.3.0/24）", "warning");
+        return;
+      }
+      // 检查掩码是否为 24
+      const maskMatch = formData.peer_address_range.match(/\/([0-9]{1,2})$/);
+      if (maskMatch && parseInt(maskMatch[1]) !== 24) {
+        onShowToast("Peer 地址范围的掩码必须是 24", "warning");
+        return;
+      }
     }
 
     try {
@@ -208,8 +230,9 @@ function ServerManagementView({
         endpoint: "",
         allowed_ips: "0.0.0.0/0,::/0",
         persistent_keepalive: "25",
-        ikuai_interface: "wg_0",
+        peer_interface: "wg_0",
         next_peer_id: 1,
+        peer_address_range: "",
       });
 
       await loadServerList();
@@ -271,16 +294,13 @@ function ServerManagementView({
   return (
     <div className="form-section">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
-        <h2>🖥️ 服务端管理</h2>
-        <button onClick={onBack} className="btn-secondary" style={{ fontSize: "0.9rem" }}>
-          ← 返回
-        </button>
+        <h2>服务端管理</h2>
       </div>
 
       {/* 表单界面 */}
       {showForm ? (
         <div>
-          <h3>{isEditing ? "编辑服务端" : "新建服务端"}</h3>
+          <h3 style={{marginBottom:'1rem'}}>{isEditing ? "编辑服务端" : "新建服务端"}</h3>
 
           <div className="form-group">
             <label>服务端名称 *</label>
@@ -304,17 +324,6 @@ function ServerManagementView({
           </div>
 
           <div className="form-group">
-            <label>Endpoint 地址 *</label>
-            <input
-              type="text"
-              value={formData.endpoint}
-              onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
-              placeholder="example.com:51820 或 1.2.3.4:51820"
-            />
-            <small>路由器服务端的公网 IP 或域名 + 端口</small>
-          </div>
-
-          <div className="form-group">
             <label>预共享密钥（可选）</label>
             <div className="key-input-group">
               <input
@@ -328,6 +337,18 @@ function ServerManagementView({
               </button>
             </div>
           </div>
+          <div className="form-row">
+          <div className="form-group">
+            <label>Endpoint 地址 *</label>
+            <input
+              type="text"
+              value={formData.endpoint}
+              onChange={(e) => setFormData({ ...formData, endpoint: e.target.value })}
+              placeholder="example.com:51820 或 1.2.3.4:51820"
+            />
+            <small>服务端的公网 IP 或域名 + 端口</small>
+          </div>
+
 
           <div className="form-group">
             <label>AllowedIPs *</label>
@@ -338,6 +359,7 @@ function ServerManagementView({
               placeholder="0.0.0.0/0,::/0"
             />
             <small>0.0.0.0/0 = 全局 VPN | 192.168.1.0/24 = 仅局域网流量</small>
+          </div>
           </div>
 
           <div className="form-row">
@@ -353,14 +375,25 @@ function ServerManagementView({
             </div>
 
             <div className="form-group">
-              <label>路由器接口名称</label>
+              <label>接口名称</label>
               <input
                 type="text"
-                value={formData.ikuai_interface}
-                onChange={(e) => setFormData({ ...formData, ikuai_interface: e.target.value })}
+                value={formData.peer_interface}
+                onChange={(e) => setFormData({ ...formData, peer_interface: e.target.value })}
                 placeholder="wg_0"
               />
             </div>
+          </div>
+
+          <div className="form-group">
+            <label>Peer 地址范围（可选）</label>
+            <input
+              type="text"
+              value={formData.peer_address_range}
+              onChange={(e) => setFormData({ ...formData, peer_address_range: e.target.value })}
+              placeholder="例如: 10.2.3.0/24"
+            />
+            <small>WireGuard Peer 的地址池，CIDR 格式，掩码必须是 24（例如: 10.0.0.0/24）</small>
           </div>
 
           <div className="button-group">
@@ -375,8 +408,9 @@ function ServerManagementView({
                   endpoint: "",
                   allowed_ips: "0.0.0.0/0,::/0",
                   persistent_keepalive: "25",
-                  ikuai_interface: "wg_0",
+                  peer_interface: "wg_0",
                   next_peer_id: 1,
+                  peer_address_range: "",
                 });
               }}
               className="btn-secondary"
@@ -396,11 +430,11 @@ function ServerManagementView({
             <div style={{ display: "flex", gap: "0.5rem" }}>
               {serverList.length > 0 && (
                 <button onClick={handleClearAllServers} className="btn-secondary" style={{ fontSize: "0.8rem", padding: "0.4rem 0.7rem" }}>
-                  🧹 清空所有服务端
+                   清空所有服务端
                 </button>
               )}
               <button onClick={handleNewServer} className="btn-primary" style={{ fontSize: "0.9rem" }}>
-                + 新建服务端
+                新建服务端
               </button>
             </div>
           </div>
@@ -460,19 +494,22 @@ function ServerManagementView({
 
               {/* 详情显示 */}
               {selectedServer && (
-                <div style={{ marginTop: "1rem", background: "var(--bg-light)", padding: "1rem", borderRadius: "8px" }}>
-                  <h3>{selectedServer.name} - 详细信息</h3>
-                  <div style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                    <p><strong>服务端公钥:</strong> <code style={{ wordBreak: "break-all" }}>{selectedServer.peer_public_key}</code></p>
-                    <p><strong>Endpoint:</strong> {selectedServer.endpoint}</p>
-                    {selectedServer.preshared_key && (
-                      <p><strong>预共享密钥:</strong> <code style={{ wordBreak: "break-all" }}>{selectedServer.preshared_key}</code></p>
+                <div style={{ marginTop: "1rem", background: "var(--bg-light)", padding: "1rem", borderRadius: "6px" }}>
+                  <h4 style={{ margin: "0 0 0.75rem 0", fontSize: "1rem", fontWeight: "600" }}>{selectedServer.name}</h4>
+                  <div style={{ fontSize: "0.85rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.75rem" }}>
+                    <div><strong>Endpoint:</strong> {selectedServer.endpoint}</div>
+                    <div><strong>接口:</strong> {selectedServer.peer_interface}</div>
+                    <div><strong>Keepalive:</strong> {selectedServer.persistent_keepalive}s</div>
+                    <div><strong>下一个 ID:</strong> #{selectedServer.next_peer_id}</div>
+                    <div><strong>AllowedIPs:</strong> <code style={{ fontSize: "0.8rem" }}>{selectedServer.allowed_ips}</code></div>
+                    <div><strong>创建时间:</strong> {new Date(selectedServer.created_at).toLocaleString()}</div>
+                    {selectedServer.peer_address_range && (
+                      <div><strong>Peer 范围:</strong> <code style={{ fontSize: "0.8rem" }}>{selectedServer.peer_address_range}</code></div>
                     )}
-                    <p><strong>AllowedIPs:</strong> {selectedServer.allowed_ips}</p>
-                    <p><strong>PersistentKeepalive:</strong> {selectedServer.persistent_keepalive} 秒</p>
-                    <p><strong>路由器接口:</strong> {selectedServer.ikuai_interface}</p>
-                    <p><strong>下一个 Peer ID:</strong> {selectedServer.next_peer_id}</p>
-                    <p><strong>创建时间:</strong> {new Date(selectedServer.created_at).toLocaleString()}</p>
+                    <div style={{ gridColumn: "1 / -1", marginTop: "0.25rem" }}><strong>公钥:</strong> <code style={{ fontSize: "0.75rem", wordBreak: "break-all" }}>{selectedServer.peer_public_key}</code></div>
+                    {selectedServer.preshared_key && (
+                      <div style={{ gridColumn: "1 / -1" }}><strong>PSK:</strong> <code style={{ fontSize: "0.75rem", wordBreak: "break-all" }}>{selectedServer.preshared_key}</code></div>
+                    )}
                   </div>
                   <div className="button-group" style={{ marginTop: "1rem" }}>
                     <button onClick={() => handleEditServer(selectedServer)} className="btn-primary">

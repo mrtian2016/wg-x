@@ -9,7 +9,7 @@ pub struct PersistentConfig {
     pub endpoint: String,
     pub allowed_ips: String,
     pub persistent_keepalive: String,
-    pub ikuai_interface: String,
+    pub peer_interface: String,
     pub next_peer_id: u32,
 }
 

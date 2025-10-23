@@ -8,8 +8,8 @@ pub struct HistoryEntry {
     pub id: String,
     pub timestamp: i64,
     pub interface_name: String,
-    pub ikuai_comment: String,
-    pub ikuai_id: u32,
+    pub peer_comment: String,
+    pub peer_id: u32,
     pub address: String,
     pub wg_config: String,
     pub ikuai_config: String,
@@ -26,8 +26,8 @@ pub struct HistoryListItem {
     pub id: String,
     pub timestamp: i64,
     pub interface_name: String,
-    pub ikuai_comment: String,
-    pub ikuai_id: u32,
+    pub peer_comment: String,
+    pub peer_id: u32,
     pub address: String,
     pub public_key: String,
     pub server_id: String,
@@ -94,8 +94,8 @@ pub fn get_history_list(app: AppHandle) -> Result<Vec<HistoryListItem>, String> 
                             id: history_entry.id,
                             timestamp: history_entry.timestamp,
                             interface_name: history_entry.interface_name,
-                            ikuai_comment: history_entry.ikuai_comment,
-                            ikuai_id: history_entry.ikuai_id,
+                            peer_comment: history_entry.peer_comment,
+                            peer_id: history_entry.peer_id,
                             address: history_entry.address,
                             public_key: history_entry.public_key,
                             server_id: history_entry.server_id,
@@ -221,8 +221,8 @@ pub fn export_all_configs_zip(app: AppHandle, zip_path: String) -> Result<(), St
                     if let Ok(history_entry) = serde_json::from_str::<HistoryEntry>(&content) {
                         let base_name = format!(
                             "{}-{}",
-                            history_entry.ikuai_comment.replace(" ", "_"),
-                            history_entry.ikuai_id
+                            history_entry.peer_comment.replace(" ", "_"),
+                            history_entry.peer_id
                         );
 
                         let wg_filename = format!("{}.conf", base_name);
@@ -276,4 +276,62 @@ pub fn get_history_list_by_server(
         .collect();
 
     Ok(filtered)
+}
+
+#[command]
+pub fn generate_next_client_ip(app: AppHandle, peer_address_range: String, server_id: String) -> Result<String, String> {
+    // 解析 CIDR 格式：10.2.3.0/24
+    let parts: Vec<&str> = peer_address_range.split('/').collect();
+    if parts.len() != 2 {
+        return Err("无效的 CIDR 格式".to_string());
+    }
+
+    let base_ip = parts[0];
+    let mask: u8 = parts[1]
+        .parse()
+        .map_err(|_| "掩码格式错误".to_string())?;
+
+    if mask != 24 {
+        return Err("目前仅支持 /24 掩码".to_string());
+    }
+
+    // 解析基础 IP（前 3 段）
+    let ip_parts: Vec<&str> = base_ip.split('.').collect();
+    if ip_parts.len() != 4 {
+        return Err("IP 地址格式错误".to_string());
+    }
+
+    let first_three = format!("{}.{}.{}", ip_parts[0], ip_parts[1], ip_parts[2]);
+
+    // 获取该服务端的所有历史记录，提取已使用的客户端 IP
+    let all_history = get_history_list(app)?;
+    let server_history: Vec<HistoryListItem> = all_history
+        .into_iter()
+        .filter(|item| item.server_id == server_id)
+        .collect();
+
+    let mut used_ips = std::collections::HashSet::new();
+
+    for history_item in server_history {
+        // 提取 address 中的 IP（格式为 IP/32）
+        if let Some(ip) = history_item.address.split('/').next() {
+            // 检查是否与基础 IP 同一网段
+            if ip.starts_with(&first_three) {
+                if let Some(last_octet_str) = ip.split('.').last() {
+                    if let Ok(last_octet) = last_octet_str.parse::<u32>() {
+                        used_ips.insert(last_octet);
+                    }
+                }
+            }
+        }
+    }
+
+    // 生成下一个可用的 IP（从 2 开始，1 被服务端占用）
+    for i in 2..=254 {
+        if !used_ips.contains(&i) {
+            return Ok(format!("{}.{}/32", first_three, i));
+        }
+    }
+
+    Err("地址池已满，无法生成新的客户端 IP".to_string())
 }
