@@ -57,6 +57,10 @@ function TunnelManagementView({ onShowToast }) {
   // 模式选择对话框状态
   const [showModeSelector, setShowModeSelector] = useState(false);
 
+  // 快速添加客户端备注输入对话框状态
+  const [showRemarkInput, setShowRemarkInput] = useState(false);
+  const [tempRemark, setTempRemark] = useState('');
+
 
   // 检测操作系统
   useEffect(() => {
@@ -182,8 +186,23 @@ function TunnelManagementView({ onShowToast }) {
   };
 
   // 快速添加客户端（自动生成密钥对和私钥）
-  const handleQuickAddClient = async () => {
+  const handleQuickAddClient = () => {
+    // 显示备注输入对话框
+    setTempRemark('');
+    setShowRemarkInput(true);
+  };
+
+  // 确认快速添加客户端（输入备注后）
+  const handleConfirmQuickAdd = async () => {
     try {
+      // 检查备注是否为空
+      if (!tempRemark || tempRemark.trim() === '') {
+        onShowToast('请输入客户端备注', 'warning');
+        return;
+      }
+
+      setShowRemarkInput(false);
+
       // 为客户端生成密钥对
       const clientKeypair = await invoke('generate_keypair');
 
@@ -208,6 +227,7 @@ function TunnelManagementView({ onShowToast }) {
         address: clientIp, // 客户端的 VPN IP 地址
         allowedIps: '0.0.0.0/0', // 路由规则，默认全流量
         persistentKeepalive: 0, // 服务端默认为 0，不需要保持连接
+        remark: tempRemark.trim(), // 备注信息
       };
 
       setConfig({
@@ -215,7 +235,8 @@ function TunnelManagementView({ onShowToast }) {
         peers: [...config.peers, newPeer],
       });
 
-      onShowToast('客户端已添加，密钥对和预共享密钥已自动生成', 'success');
+      onShowToast(`客户端"${tempRemark.trim()}"已添加，密钥对和预共享密钥已自动生成`, 'success');
+      setTempRemark('');
     } catch (error) {
       onShowToast('快速添加客户端失败: ' + error, 'error');
     }
@@ -502,6 +523,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
           address: peer.address || null, // 客户端的 VPN IP 地址
           allowed_ips: peer.allowedIps,
           persistent_keepalive: peer.persistentKeepalive || null,
+          remark: peer.remark || null, // 备注信息
         })),
         created_at: Date.now(),
       };
@@ -553,6 +575,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
             address: p.address || '', // 客户端的 VPN IP 地址
             allowedIps: p.allowed_ips || '0.0.0.0/0',
             persistentKeepalive: p.persistent_keepalive || 25,
+            remark: p.remark || '', // 备注信息
           }))
         : [];
 
@@ -1172,6 +1195,48 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
             setShowConfigForm(true);
           }}
         />
+      )}
+
+      {/* 快速添加客户端备注输入对话框 */}
+      {showRemarkInput && (
+        <div className="modal-overlay" onClick={() => setShowRemarkInput(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+            <div className="modal-header">
+              <h3>添加客户端备注</h3>
+              <button onClick={() => setShowRemarkInput(false)} className="btn-close">
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.95rem' }}>
+                请为新客户端输入一个备注，方便识别和管理。
+              </p>
+              <div className="form-group">
+                <label>客户端备注 *</label>
+                <input
+                  type="text"
+                  value={tempRemark}
+                  onChange={(e) => setTempRemark(e.target.value)}
+                  placeholder="例如：张三的手机、办公电脑、家里的路由器等"
+                  autoFocus
+                  onKeyPress={(e) => {
+                    if (e.key === 'Enter') {
+                      handleConfirmQuickAdd();
+                    }
+                  }}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button onClick={() => setShowRemarkInput(false)} className="btn-secondary">
+                取消
+              </button>
+              <button onClick={handleConfirmQuickAdd} className="btn-primary">
+                确认添加
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
 {/* Peer 列表模态框 */}

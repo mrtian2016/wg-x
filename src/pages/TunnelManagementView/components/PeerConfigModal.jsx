@@ -17,11 +17,14 @@ function PeerConfigModal({
     return null;
   }
 
+  const peer = tunnel.peers[peerIndex];
+  const peerTitle = peer?.remark ? `${peer.remark} 的配置` : `Peer ${peerIndex + 1} 配置`;
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
-          <h3>Peer {peerIndex + 1} 配置</h3>
+          <h3>{peerTitle}</h3>
           <button onClick={onClose} className="btn-close">
             ✕
           </button>

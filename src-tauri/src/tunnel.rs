@@ -252,6 +252,8 @@ pub struct TunnelPeerConfig {
     pub address: Option<String>, // 客户端的 VPN IP 地址
     pub allowed_ips: String,
     pub persistent_keepalive: Option<u16>,
+    #[serde(default)]
+    pub remark: Option<String>, // 备注信息，用于标识客户端
 }
 
 // 隧道配置(用户创建的配置)
