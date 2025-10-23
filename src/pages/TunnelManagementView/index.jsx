@@ -438,7 +438,6 @@ function TunnelManagementView({ onShowToast }) {
 
       {tunnels.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-icon">🚇</div>
           <h3>暂无隧道配置</h3>
           <p>点击"新建隧道"按钮创建你的第一个 WireGuard 隧道</p>
           <button

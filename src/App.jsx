@@ -245,20 +245,20 @@ function App() {
               className={`nav-item ${currentPage === 'tunnel' ? 'active' : ''}`}
               onClick={() => setCurrentPage('tunnel')}
             >
-              隧道管理
+              隧道列表
             </button>
 
             <button
               className={`nav-item ${currentPage === 'config' ? 'active' : ''}`}
               onClick={() => setCurrentPage('config')}
             >
-              配置生成
+              Peer 配置
             </button>
             <button
               className={`nav-item ${currentPage === 'server' ? 'active' : ''}`}
               onClick={() => setCurrentPage('server')}
             >
-              服务管理
+              服务器配置
             </button>
 
             <button
@@ -267,13 +267,13 @@ function App() {
                 setCurrentPage('history');
               }}
             >
-              历史记录
+              配置历史
             </button>
             <button
               className={`nav-item ${currentPage === 'webdav' ? 'active' : ''}`}
               onClick={() => setCurrentPage('webdav')}
             >
-              同步设置
+              WebDAV同步
             </button>
           </div>
         </nav>
