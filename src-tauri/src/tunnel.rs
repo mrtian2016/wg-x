@@ -754,9 +754,42 @@ pub async fn get_tunnel_details(
 
         #[cfg(target_os = "linux")]
         {
-            // TODO: Linux 平台的 peer 统计信息获取
-            // 需要通过 IPC 获取每个 peer 的统计信息
-            log::warn!("Linux 平台暂不支持获取单个 peer 的统计信息");
+            use crate::daemon_ipc::IpcClient;
+            let tid = tunnel_id.clone();
+            // 使用 spawn_blocking 避免阻塞异步运行时
+            let result = tokio::task::spawn_blocking(move || {
+                IpcClient::get_peer_stats(&tid)
+            }).await;
+
+            match result {
+                Ok(Ok(peer_stats_list)) => {
+                    log::info!("获取到 {} 个 peer 的统计数据", peer_stats_list.len());
+                    // 创建一个 HashMap 以便快速查找
+                    let mut stats_map = std::collections::HashMap::new();
+                    for stat in peer_stats_list {
+                        stats_map.insert(stat.public_key.clone(), (stat.tx_bytes, stat.rx_bytes, stat.last_handshake));
+                    }
+
+                    // 更新 peers 的统计信息
+                    for peer in &mut peers {
+                        if let Some((tx, rx, handshake)) = stats_map.get(&peer.public_key) {
+                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                                &peer.public_key[..8.min(peer.public_key.len())], tx, rx, handshake);
+                            peer.tx_bytes = *tx;
+                            peer.rx_bytes = *rx;
+                            peer.last_handshake = *handshake;
+                        } else {
+                            log::warn!("未找到 peer {} 的统计数据", &peer.public_key[..8.min(peer.public_key.len())]);
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    log::error!("获取 Linux peer 统计信息失败: {}", e);
+                }
+                Err(e) => {
+                    log::error!("获取 Linux peer 统计任务失败: {}", e);
+                }
+            }
         }
         peers
     } else {

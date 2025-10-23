@@ -57,6 +57,15 @@ pub struct TunnelStatusIpc {
     pub last_handshake: Option<i64>,
 }
 
+// Per-peer 统计信息
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct PeerStatsIpc {
+    pub public_key: String,
+    pub tx_bytes: u64,
+    pub rx_bytes: u64,
+    pub last_handshake: Option<i64>,
+}
+
 // IPC 客户端 (GUI 使用)
 pub struct IpcClient;
 
@@ -151,6 +160,22 @@ impl IpcClient {
             serde_json::from_value(result).map_err(|e| format!("解析状态失败: {}", e))?;
 
         Ok(status)
+    }
+
+    /// 获取隧道的 per-peer 统计信息
+    pub fn get_peer_stats(tunnel_id: &str) -> Result<Vec<PeerStatsIpc>, String> {
+        let params = serde_json::json!({ "tunnel_id": tunnel_id });
+        let response = Self::send_request("get_peer_stats", params)?;
+
+        if let Some(error) = response.error {
+            return Err(error);
+        }
+
+        let result = response.result.ok_or("响应缺少结果")?;
+        let stats: Vec<PeerStatsIpc> =
+            serde_json::from_value(result).map_err(|e| format!("解析 peer 统计失败: {}", e))?;
+
+        Ok(stats)
     }
 
     /// 列出所有运行中的隧道

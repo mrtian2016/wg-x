@@ -2,7 +2,8 @@
 // 以 root 权限运行,管理 WireGuard 隧道
 
 use crate::daemon_ipc::{
-    IpcRequest, IpcResponse, PeerConfigIpc, TunnelConfigIpc, TunnelStatusIpc, DAEMON_SOCKET_PATH,
+    IpcRequest, IpcResponse, PeerConfigIpc, PeerStatsIpc, TunnelConfigIpc, TunnelStatusIpc,
+    DAEMON_SOCKET_PATH,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use std::collections::HashMap;
@@ -93,6 +94,7 @@ async fn handle_client(stream: UnixStream) -> Result<(), String> {
         "start_tunnel" => handle_start_tunnel(request.id.clone(), request.params).await,
         "stop_tunnel" => handle_stop_tunnel(request.id.clone(), request.params).await,
         "get_tunnel_status" => handle_get_tunnel_status(request.id.clone(), request.params).await,
+        "get_peer_stats" => handle_get_peer_stats(request.id.clone(), request.params).await,
         "list_tunnels" => handle_list_tunnels(request.id.clone()).await,
         "ping" => handle_ping(request.id.clone()).await,
         _ => IpcResponse {
@@ -593,6 +595,194 @@ async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, 
         rx_bytes,
         last_handshake,
     })
+}
+
+/// 处理获取 per-peer 统计信息请求
+async fn handle_get_peer_stats(request_id: String, params: serde_json::Value) -> IpcResponse {
+    log::info!("收到获取 peer 统计请求: params={:?}", params);
+    let tunnel_id: String =
+        match serde_json::from_value(params.get("tunnel_id").cloned().unwrap_or_default()) {
+            Ok(id) => id,
+            Err(e) => {
+                log::error!("解析 tunnel_id 失败: {}", e);
+                return IpcResponse {
+                    id: request_id,
+                    result: None,
+                    error: Some(format!("解析 tunnel_id 失败: {}", e)),
+                };
+            }
+        };
+
+    log::info!("查询 peer 统计: tunnel_id={}", tunnel_id);
+    match get_peer_stats_internal(&tunnel_id).await {
+        Ok(stats) => IpcResponse {
+            id: request_id,
+            result: Some(serde_json::to_value(&stats).unwrap()),
+            error: None,
+        },
+        Err(e) => IpcResponse {
+            id: request_id,
+            result: None,
+            error: Some(e),
+        },
+    }
+}
+
+/// 内部获取 per-peer 统计信息逻辑
+async fn get_peer_stats_internal(tunnel_id: &str) -> Result<Vec<PeerStatsIpc>, String> {
+    log::debug!("开始获取隧道 {} 的 peer 统计", tunnel_id);
+    let socket_path = {
+        let tunnels = DAEMON_TUNNELS.lock().await;
+        log::debug!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
+
+        if let Some(tunnel) = tunnels.get(tunnel_id) {
+            log::debug!("找到隧道，socket 路径: {}", tunnel.socket_path);
+            tunnel.socket_path.clone()
+        } else {
+            log::error!("隧道 {} 未在运行列表中", tunnel_id);
+            return Err(format!("隧道 {} 未运行", tunnel_id));
+        }
+    };
+
+    // 在阻塞线程池中获取 peer 统计信息
+    log::debug!("准备获取 peer 统计信息...");
+    let socket_path_clone = socket_path.clone();
+    let peer_stats = tokio::task::spawn_blocking(move || {
+        log::debug!("在阻塞线程中获取 peer 统计: {}", socket_path_clone);
+        get_peer_stats_from_uapi(&socket_path_clone)
+    })
+    .await
+    .map_err(|e| format!("获取统计任务失败: {}", e))??;
+
+    log::debug!("获取到 {} 个 peer 的统计信息", peer_stats.len());
+
+    Ok(peer_stats)
+}
+
+/// 从 UAPI 获取 per-peer 统计信息
+fn get_peer_stats_from_uapi(socket_path: &str) -> Result<Vec<PeerStatsIpc>, String> {
+    use std::io::Read;
+    use std::os::unix::net::UnixStream;
+
+    log::debug!("连接到 socket: {}", socket_path);
+    let mut stream = UnixStream::connect(socket_path)
+        .map_err(|e| format!("连接 socket {} 失败: {}", socket_path, e))?;
+
+    // 设置读取超时
+    stream
+        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+        .map_err(|e| format!("设置超时失败: {}", e))?;
+
+    log::debug!("发送 get 命令");
+    stream
+        .write_all(b"get=1\n\n")
+        .map_err(|e| format!("发送请求失败: {}", e))?;
+
+    // 读取响应
+    let mut response = String::new();
+    let mut buffer = [0u8; 4096];
+
+    log::debug!("开始读取响应");
+    loop {
+        match stream.read(&mut buffer) {
+            Ok(0) => {
+                log::debug!("EOF");
+                break;
+            }
+            Ok(n) => {
+                response.push_str(&String::from_utf8_lossy(&buffer[..n]));
+                if response.contains("\n\n") {
+                    log::debug!("检测到双换行符，停止读取");
+                    break;
+                }
+            }
+            Err(ref e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                if !response.is_empty() {
+                    log::debug!("超时但已有数据，停止读取");
+                    break;
+                }
+                return Err("读取超时".to_string());
+            }
+            Err(e) => return Err(format!("读取失败: {}", e)),
+        }
+    }
+
+    // 解析 UAPI 响应获取 per-peer 统计
+    parse_peer_stats(&response)
+}
+
+/// 解析 UAPI 响应,提取每个 peer 的统计信息
+fn parse_peer_stats(uapi_response: &str) -> Result<Vec<PeerStatsIpc>, String> {
+    let mut peer_stats = Vec::new();
+    let mut current_public_key: Option<String> = None;
+    let mut current_tx_bytes = 0u64;
+    let mut current_rx_bytes = 0u64;
+    let mut current_last_handshake: Option<i64> = None;
+
+    for line in uapi_response.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("public_key=") {
+            // 保存上一个 peer 的数据
+            if let Some(public_key) = current_public_key.take() {
+                peer_stats.push(PeerStatsIpc {
+                    public_key: hex_to_base64(&public_key)?,
+                    tx_bytes: current_tx_bytes,
+                    rx_bytes: current_rx_bytes,
+                    last_handshake: current_last_handshake,
+                });
+                // 重置计数器
+                current_tx_bytes = 0;
+                current_rx_bytes = 0;
+                current_last_handshake = None;
+            }
+
+            // 开始新 peer
+            if let Some(hex_key) = line.strip_prefix("public_key=") {
+                current_public_key = Some(hex_key.to_string());
+            }
+        } else if line.starts_with("tx_bytes=") {
+            if let Some(value) = line.strip_prefix("tx_bytes=") {
+                current_tx_bytes = value.parse().unwrap_or(0);
+            }
+        } else if line.starts_with("rx_bytes=") {
+            if let Some(value) = line.strip_prefix("rx_bytes=") {
+                current_rx_bytes = value.parse().unwrap_or(0);
+            }
+        } else if line.starts_with("last_handshake_time_sec=") {
+            if let Some(value) = line.strip_prefix("last_handshake_time_sec=") {
+                if let Ok(ts) = value.parse::<i64>() {
+                    if ts > 0 {
+                        current_last_handshake = Some(ts);
+                    }
+                }
+            }
+        }
+    }
+
+    // 保存最后一个 peer
+    if let Some(public_key) = current_public_key {
+        peer_stats.push(PeerStatsIpc {
+            public_key: hex_to_base64(&public_key)?,
+            tx_bytes: current_tx_bytes,
+            rx_bytes: current_rx_bytes,
+            last_handshake: current_last_handshake,
+        });
+    }
+
+    Ok(peer_stats)
+}
+
+/// 将十六进制密钥转换为 Base64
+fn hex_to_base64(hex: &str) -> Result<String, String> {
+    let bytes = hex::decode(hex).map_err(|e| format!("十六进制解码失败: {}", e))?;
+    Ok(BASE64.encode(&bytes))
 }
 
 /// 获取接口统计信息
