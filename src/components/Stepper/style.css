@@ -1,0 +1,160 @@
+/* Stepper 容器 */
+.stepper-container {
+  width: 100%;
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* 步骤列表 */
+.stepper-steps {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.5rem;
+  position: relative;
+}
+
+/* 单个步骤项 */
+.stepper-item {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  position: relative;
+}
+
+/* 步骤圆圈 */
+.stepper-circle {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+
+/* 步骤标签 */
+.stepper-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: #64748b;
+  text-align: center;
+  line-height: 1.2;
+  max-width: 60px;
+  transition: color 0.3s ease;
+}
+
+/* 活跃步骤 */
+.stepper-item.active .stepper-circle {
+  background: #2563eb;
+  color: white;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+  border-color: #2563eb;
+  transform: scale(1.05);
+}
+
+.stepper-item.active .stepper-label {
+  color: #2563eb;
+  font-weight: 600;
+}
+
+/* 已完成的步骤 */
+.stepper-item.completed .stepper-circle {
+  background: #10b981;
+  color: white;
+  border-color: #10b981;
+}
+
+.stepper-item.completed .stepper-label {
+  color: #10b981;
+}
+
+/* 进度条容器 */
+.stepper-progress-bar {
+  height: 3px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+/* 进度条填充 */
+.stepper-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb 0%, #3b82f6 100%);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .stepper-container {
+    padding: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .stepper-circle {
+    width: 28px;
+    height: 28px;
+    font-size: 0.75rem;
+  }
+
+  .stepper-label {
+    font-size: 0.65rem;
+    max-width: 50px;
+  }
+
+  .stepper-item {
+    gap: 0.25rem;
+  }
+}
+
+/* 深色模式 */
+@media (prefers-color-scheme: dark) {
+  .stepper-container {
+    background: #0f172a;
+  }
+
+  .stepper-circle {
+    background: #1e293b;
+    color: #94a3b8;
+  }
+
+  .stepper-label {
+    color: #94a3b8;
+  }
+
+  .stepper-item.active .stepper-circle {
+    background: #2563eb;
+    color: white;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  }
+
+  .stepper-item.active .stepper-label {
+    color: #60a5fa;
+  }
+
+  .stepper-item.completed .stepper-circle {
+    background: #10b981;
+    color: white;
+  }
+
+  .stepper-item.completed .stepper-label {
+    color: #10b981;
+  }
+
+  .stepper-progress-bar {
+    background: #1e293b;
+  }
+}

@@ -4,7 +4,7 @@ import ConfirmDialog from '../../components/ConfirmDialog';
 import DaemonPanel from '../../components/DaemonPanel';
 import './style.css';
 
-function TunnelManagementView({ onBack, onShowToast }) {
+function TunnelManagementView({ onShowToast }) {
   const [tunnels, setTunnels] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedTunnel, setSelectedTunnel] = useState(null);

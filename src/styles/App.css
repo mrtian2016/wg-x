@@ -139,14 +139,82 @@ header h1 {
   right: -3.5rem;
   white-space: nowrap;
 }
+
+/* 应用主布局：左侧导航 + 右侧内容 */
+.app-layout {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  gap: 0;
+  margin: 2rem;
+  border-radius: 4px;
+}
+
+/* 左侧导航栏 */
+.sidebar {
+  width: 200px;
+  background: white;
+  border-right: 1px solid var(--border-color);
+  padding: 1.5rem 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex-shrink: 0;
+}
+
+.sidebar-section {
+  margin-bottom: 1.5rem;
+  padding: 0 0.75rem;
+}
+
+.sidebar-section-title {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 1rem 0.75rem;
+  margin: 0;
+}
+
+.nav-item {
+  display: block;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: transparent;
+  color: var(--text-color);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.5rem;
+}
+
+.nav-item:hover {
+  background: var(--bg-light);
+  color: var(--primary-color);
+}
+
+.nav-item.active {
+  background: var(--primary-color);
+  color: white;
+}
+
+.sidebar-divider {
+  height: 1px;
+  background: var(--border-color);
+  margin: 1rem 0;
+}
+
 /* 主内容滚动区域 */
 .main-content-wrapper {
   flex: 1;
-
-  margin-top: 3rem;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 2rem 2rem;
+  padding: 2rem;
+  background: var(--bg-light);
 }
 
 /* 主布局 - 左右结构 */
@@ -156,21 +224,12 @@ header h1 {
   align-items: flex-start;
 }
 
-/* 左侧进度条侧边栏 */
-.progress-sidebar {
-  flex-shrink: 0;
-  width: 160px;
-  height: 610px;
-  background: white;
-  padding: 1rem;
-  border-radius: 10px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+/* 配置内容包装器 - 替代旧的主布局 */
+.config-content-wrapper {
+  width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  position: sticky;
-  top: 0;
-  align-self: flex-start;
+  gap: 0;
 }
 
 /* 侧边栏导航按钮容器 */
@@ -273,12 +332,13 @@ header h1 {
 .form-section {
   position: relative;
   background: white;
-  padding: 1.25rem;
+  padding: 1.75rem;
   border-radius: 10px;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
   animation: fadeIn 0.3s ease;
-  height: 610px;
-  overflow-y: scroll;
+  min-height: auto;
+  max-height: calc(100vh - 350px);
+  overflow-y: auto;
 }
 
 @keyframes fadeIn {
@@ -374,13 +434,13 @@ header h1 {
 
 /* 按钮 */
 .button-group {
-  position: absolute;
-  bottom: 1rem;
-  right: 1rem;
+  position: relative;
   display: flex;
   gap: 0.75rem;
-  margin-top: 1.25rem;
+  margin-top: 1.75rem;
   justify-content: flex-end;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-color);
 }
 
 button {
@@ -739,10 +799,10 @@ button:active:not(:disabled) {
 
 /* 欢迎页样式 */
 .welcome-section {
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 1rem;
-  height: 610px;
+  min-height: auto;
   display: flex;
   flex-direction: column;
   justify-content: space-between;

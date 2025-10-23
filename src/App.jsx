@@ -10,8 +10,10 @@ import WebDavSettingsView from "./pages/WebDavSettingsView";
 import TunnelManagementView from "./pages/TunnelManagementView";
 import ConfigTabs from "./components/ConfigTabs";
 import UpdateProgressDialog from "./components/UpdateProgressDialog";
+import Stepper from "./components/Stepper";
 import { updateManager } from "./utils/updateManager";
 import "./styles/App.css";
+import "./styles/ConfigLayout.css";
 
 function App() {
   const { messages, showToast, removeToast } = useToast();
@@ -64,8 +66,8 @@ function App() {
   // 隧道管理相关状态
   const [showTunnelManagement, setShowTunnelManagement] = useState(false);
 
-  // 主视图状态: 'config' 或 'tunnel'
-  const [mainView, setMainView] = useState('config');
+  // 主视图状态: 'tunnel'(隧道列表/首页), 'config'(配置生成), 'server'(服务端管理), 'history'(历史记录), 'webdav'(WebDAV设置)
+  const [currentPage, setCurrentPage] = useState('tunnel');
 
   const [webdavConfig, setWebdavConfig] = useState({
     enabled: false,
@@ -869,116 +871,112 @@ function App() {
       <header>
         <div className="header-content">
           <h1>🔐 WireGuard X</h1>
-          <div className="view-switcher">
+        </div>
+      </header>
+
+      {/* 主容器：左侧导航 + 右侧内容 */}
+      <div className="app-layout">
+        {/* 左侧导航栏 */}
+        <nav className="sidebar">
+          {/* 隧道管理部分 */}
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">隧道管理</div>
             <button
-              className={`view-btn ${mainView === 'config' ? 'active' : ''}`}
-              onClick={() => setMainView('config')}
+              className={`nav-item ${currentPage === 'tunnel' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('tunnel')}
+            >
+              🚇 隧道列表
+            </button>
+          </div>
+
+          {/* 分割线 */}
+          <div className="sidebar-divider"></div>
+
+          {/* 配置相关 */}
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">配置</div>
+            <button
+              className={`nav-item ${currentPage === 'config' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('config')}
             >
               📝 配置生成
             </button>
             <button
-              className={`view-btn ${mainView === 'tunnel' ? 'active' : ''}`}
-              onClick={() => setMainView('tunnel')}
+              className={`nav-item ${currentPage === 'server' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('server')}
             >
-              🚇 隧道管理
+              🖥️ 服务端管理
             </button>
           </div>
-        </div>
-      </header>
 
-      <div className="main-content-wrapper">
-        {/* 根据 mainView 显示不同的主视图 */}
-        {mainView === 'tunnel' ? (
-          /* 隧道管理视图 */
-          <TunnelManagementView
-            onBack={() => setMainView('config')}
-            onShowToast={showToast}
-          />
-        ) : showServerManagement ? (
-          <ServerManagementView
-            onBack={() => {
-              setShowServerManagement(false);
-              loadServerList();  // 刷新服务端列表
-            }}
-            onShowToast={showToast}
-          />
-        ) : showWebDavSettings ? (
-          <WebDavSettingsView
-            onBack={() => setShowWebDavSettings(false)}
-            onConfigChange={loadWebDavConfig}
-          />
-        ) : showHistory ? (
-          <HistoryView
-            historyList={historyList}
-            onDeleteHistory={handleDeleteHistory}
-            onClearCache={handleClearCache}
-            onExportAllPeers={handleExportAllPeers}
-            onExportAllZip={handleExportAllZip}
-            onShowToast={showToast}
-            onBack={() => setShowHistory(false)}
-          />
-        ) : (
-          <>
-            {/* 主内容区域 - 左右布局 */}
-            <div className="main-layout">
-              {/* 左侧进度指示器 */}
-              <div className="progress-sidebar">
-                <div className={`progress-step ${step >= 0 ? "active" : ""}`}>
-                  <span className="step-number">🏠</span>
-                  <span className="step-label">欢迎</span>
-                </div>
-                <div className={`progress-step ${step >= 1 ? "active" : ""}`}>
-                  <span className="step-number">1</span>
-                  <span className="step-label">本地配置</span>
-                </div>
-                <div className={`progress-step ${step >= 2 ? "active" : ""}`}>
-                  <span className="step-number">2</span>
-                  <span className="step-label">选择服务端</span>
-                </div>
-                <div className={`progress-step ${step >= 3 ? "active" : ""}`}>
-                  <span className="step-number">3</span>
-                  <span className="step-label">服务端信息</span>
-                </div>
-                <div className={`progress-step ${step >= 4 ? "active" : ""}`}>
-                  <span className="step-number">4</span>
-                  <span className="step-label">客户端信息</span>
-                </div>
-                <div className={`progress-step ${step >= 5 ? "active" : ""}`}>
-                  <span className="step-number">5</span>
-                  <span className="step-label">完成</span>
-                </div>
+          {/* 分割线 */}
+          <div className="sidebar-divider"></div>
 
-                {/* 导航按钮 */}
-                <div className="sidebar-nav-buttons">
-                  <button
-                    onClick={async () => {
-                      await loadHistoryList();
-                      setShowHistory(true);
-                    }}
-                    className="btn-sidebar-nav"
-                    title="查看历史记录"
-                  >
-                    📜 历史记录
-                  </button>
-                  <button
-                    onClick={() => setShowServerManagement(true)}
-                    className="btn-sidebar-nav"
-                    title="管理服务端配置"
-                  >
-                    🖥️ 服务端管理
-                  </button>
-                  <button
-                    onClick={() => setShowWebDavSettings(true)}
-                    className="btn-sidebar-nav"
-                    title="WebDAV 云同步设置"
-                  >
-                    ☁️ WebDAV 同步
-                  </button>
-                </div>
-              </div>
+          {/* 其他功能 */}
+          <div className="sidebar-section">
+            <div className="sidebar-section-title">其他</div>
+            <button
+              className={`nav-item ${currentPage === 'history' ? 'active' : ''}`}
+              onClick={async () => {
+                await loadHistoryList();
+                setCurrentPage('history');
+              }}
+            >
+              📜 历史记录
+            </button>
+            <button
+              className={`nav-item ${currentPage === 'webdav' ? 'active' : ''}`}
+              onClick={() => setCurrentPage('webdav')}
+            >
+              ☁️ WebDAV 同步
+            </button>
+          </div>
+        </nav>
 
-              {/* 右侧主要内容 */}
-              <div className="content-main">
+        {/* 右侧主内容区域 */}
+        <div className="main-content-wrapper">
+          {/* 根据 currentPage 显示不同的页面 */}
+          {currentPage === 'tunnel' ? (
+            /* 隧道管理视图（首页）*/
+            <TunnelManagementView
+              onShowToast={showToast}
+            />
+          ) : currentPage === 'server' ? (
+            <ServerManagementView
+              onBack={() => {
+                setCurrentPage('tunnel');
+                loadServerList();  // 刷新服务端列表
+              }}
+              onShowToast={showToast}
+            />
+          ) : currentPage === 'webdav' ? (
+            <WebDavSettingsView
+              onBack={() => setCurrentPage('tunnel')}
+              onConfigChange={loadWebDavConfig}
+            />
+          ) : currentPage === 'history' ? (
+            <HistoryView
+              historyList={historyList}
+              onDeleteHistory={handleDeleteHistory}
+              onClearCache={handleClearCache}
+              onExportAllPeers={handleExportAllPeers}
+              onExportAllZip={handleExportAllZip}
+              onShowToast={showToast}
+              onBack={() => setCurrentPage('tunnel')}
+            />
+          ) : currentPage === 'config' ? (
+            <>
+              {/* Stepper 导航 */}
+              {step > 0 && step < 5 && (
+                <Stepper
+                  currentStep={step - 1}
+                  totalSteps={5}
+                  stepLabels={["本地配置", "选择服务端", "服务端信息", "路由器配置", "完成"]}
+                />
+              )}
+
+              {/* 主内容区域 - 单列布局 */}
+              <div className="config-content-wrapper">
 
                 {/* 步骤 0: 欢迎页 */}
                 {step === 0 && (
@@ -1383,9 +1381,9 @@ function App() {
                   </div>
                 )}
               </div>
-            </div>
-          </>
-        )}
+            </>
+          ) : null}
+        </div>
       </div>
 
       {/* 确认对话框 */}
