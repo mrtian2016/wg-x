@@ -987,3 +987,45 @@
   text-align: center;
   width: 100%;
 }
+
+/* Peer 列表容器样式 */
+.peer-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.peer-list-item {
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 1.25rem;
+  background: white;
+  transition: all 0.2s;
+}
+
+.peer-list-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  border-color: #007bff;
+}
+
+.peer-list-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e9ecef;
+}
+
+.peer-list-item-header h4 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text-primary, #2c3e50);
+  font-weight: 600;
+}
+
+.peer-list-item-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}

@@ -18,6 +18,11 @@ function TunnelManagementView({ onShowToast }) {
   const [daemonStatus, setDaemonStatus] = useState(null);
   const [showDaemonPanel, setShowDaemonPanel] = useState(false);
 
+  // Peer 列表模态框状态
+  const [showPeerList, setShowPeerList] = useState(false);
+  const [peerListTunnel, setPeerListTunnel] = useState(null);
+  const [selectedPeerForConfig, setSelectedPeerForConfig] = useState(null);
+
   // 确认对话框状态
   const [confirmDialog, setConfirmDialog] = useState({
     isOpen: false,
@@ -44,8 +49,7 @@ function TunnelManagementView({ onShowToast }) {
   // 模式选择对话框状态
   const [showModeSelector, setShowModeSelector] = useState(false);
 
-  // Peer 列表显示状态
-  const [activePeerTab, setActivePeerTab] = useState(0); // 当前选中的 Peer Tab 索引
+  // Peer 配置 Tab 状态
   const [activePeerConfigTab, setActivePeerConfigTab] = useState('wireguard'); // 当前选中的 Peer 配置 Tab ('wireguard', 'qrcode', 'surge')
 
 
@@ -253,29 +257,30 @@ PersistentKeepalive = 25`;
   };
 
   // 生成隧道详情中的 Peer 配置显示（用于服务端显示客户端配置）
-  const generateDetailPeerConfig = (peerIndex) => {
-    if (!selectedTunnel || !selectedTunnel.peers || selectedTunnel.peers.length <= peerIndex) {
+  const generateDetailPeerConfig = (peerIndex, tunnel = null) => {
+    const targetTunnel = tunnel || selectedTunnel;
+    if (!targetTunnel || !targetTunnel.peers || targetTunnel.peers.length <= peerIndex) {
       return '配置不可用';
     }
 
-    const peer = selectedTunnel.peers[peerIndex];
-    if (!selectedTunnel.address || !peer.public_key) {
+    const peer = targetTunnel.peers[peerIndex];
+    if (!targetTunnel.address || !peer.public_key) {
       return '请先完善配置';
     }
 
     // 获取服务端的 Endpoint
     let serverEndpoint = '服务端地址未配置';
-    if (selectedTunnel.server_endpoint) {
-      serverEndpoint = selectedTunnel.listen_port ?
-        `${selectedTunnel.server_endpoint}:${selectedTunnel.listen_port}` :
-        `${selectedTunnel.server_endpoint}:51820`;
+    if (targetTunnel.server_endpoint) {
+      serverEndpoint = targetTunnel.listen_port ?
+        `${targetTunnel.server_endpoint}:${targetTunnel.listen_port}` :
+        `${targetTunnel.server_endpoint}:51820`;
     } else {
-      serverEndpoint = selectedTunnel.listen_port ?
-        `<服务器IP或域名>:${selectedTunnel.listen_port}` :
+      serverEndpoint = targetTunnel.listen_port ?
+        `<服务器IP或域名>:${targetTunnel.listen_port}` :
         '<服务器IP或域名>:51820';
     }
 
-    const serverAllowedIps = selectedTunnel.address || '10.0.0.0/24';
+    const serverAllowedIps = targetTunnel.address || '10.0.0.0/24';
     const clientPrivateKey = peer.client_private_key || '<客户端私钥>';
 
     const clientConfig = `[Interface]
@@ -285,7 +290,7 @@ DNS = 8.8.8.8, 8.8.4.4
 MTU = 1420
 
 [Peer]
-PublicKey = ${selectedTunnel.public_key || '<服务端公钥>'}
+PublicKey = ${targetTunnel.public_key || '<服务端公钥>'}
 ${peer.preshared_key ? `PreSharedKey = ${peer.preshared_key}` : '# PreSharedKey = <预共享密钥，可选>'}
 AllowedIPs = ${serverAllowedIps}
 Endpoint = ${serverEndpoint}
@@ -295,29 +300,30 @@ PersistentKeepalive = 25`;
   };
 
   // 生成隧道详情中的 Surge Peer 配置
-  const generateSurgeDetailPeerConfig = (peerIndex) => {
-    if (!selectedTunnel || !selectedTunnel.peers || selectedTunnel.peers.length <= peerIndex) {
+  const generateSurgeDetailPeerConfig = (peerIndex, tunnel = null) => {
+    const targetTunnel = tunnel || selectedTunnel;
+    if (!targetTunnel || !targetTunnel.peers || targetTunnel.peers.length <= peerIndex) {
       return '配置不可用';
     }
 
-    const peer = selectedTunnel.peers[peerIndex];
-    if (!selectedTunnel.address || !peer.public_key) {
+    const peer = targetTunnel.peers[peerIndex];
+    if (!targetTunnel.address || !peer.public_key) {
       return '请先完善配置';
     }
 
     // 获取服务端的 Endpoint
     let serverEndpoint = '';
-    if (selectedTunnel.server_endpoint) {
-      serverEndpoint = selectedTunnel.listen_port ?
-        `${selectedTunnel.server_endpoint}:${selectedTunnel.listen_port}` :
-        `${selectedTunnel.server_endpoint}:51820`;
+    if (targetTunnel.server_endpoint) {
+      serverEndpoint = targetTunnel.listen_port ?
+        `${targetTunnel.server_endpoint}:${targetTunnel.listen_port}` :
+        `${targetTunnel.server_endpoint}:51820`;
     } else {
       return '服务端地址未配置';
     }
 
-    const serverAllowedIps = selectedTunnel.address || '10.0.0.0/24';
+    const serverAllowedIps = targetTunnel.address || '10.0.0.0/24';
     const clientPrivateKey = peer.client_private_key || '';
-    const tunnelName = selectedTunnel.name || 'wireguard';
+    const tunnelName = targetTunnel.name || 'wireguard';
 
     if (!clientPrivateKey) {
       return '客户端私钥未生成';
@@ -331,15 +337,15 @@ private-key = ${clientPrivateKey}
 self-ip = ${peer.allowed_ips.split('/')[0]}
 dns-server = 8.8.8.8, 8.8.4.4
 mtu = 1420
-peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverAllowedIps}, endpoint = ${serverEndpoint}${peer.preshared_key ? `, pre-shared-key = ${peer.preshared_key}` : ''})`;
+peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAllowedIps}, endpoint = ${serverEndpoint}${peer.preshared_key ? `, pre-shared-key = ${peer.preshared_key}` : ''})`;
 
     return surgeConfig;
   };
 
   // 生成 Peer 的二维码
-  const generatePeerQrcode = async (peerIndex) => {
+  const generatePeerQrcode = async (peerIndex, tunnel = null) => {
     try {
-      const config = generateDetailPeerConfig(peerIndex);
+      const config = generateDetailPeerConfig(peerIndex, tunnel);
       // 后端已返回完整的 Data URL，直接使用
       const dataUrl = await invoke('generate_qrcode', { content: config });
       return dataUrl;
@@ -350,13 +356,14 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
   };
 
   // 复制 Peer 配置到剪贴板
-  const handleCopyPeerConfig = async (peerIndex, configType = 'wireguard') => {
+  const handleCopyPeerConfig = async (peerIndex, configType = 'wireguard', tunnel = null) => {
     try {
+      const targetTunnel = tunnel || selectedTunnel;
       let config;
       if (configType === 'wireguard') {
-        config = generateDetailPeerConfig(peerIndex);
+        config = generateDetailPeerConfig(peerIndex, targetTunnel);
       } else if (configType === 'surge') {
-        config = generateSurgeDetailPeerConfig(peerIndex);
+        config = generateSurgeDetailPeerConfig(peerIndex, targetTunnel);
       }
       await navigator.clipboard.writeText(config);
       onShowToast('配置已复制到剪贴板', 'success');
@@ -366,18 +373,19 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
   };
 
   // 保存 Peer 配置文件
-  const handleSavePeerConfig = async (peerIndex, configType = 'wireguard') => {
+  const handleSavePeerConfig = async (peerIndex, configType = 'wireguard', tunnel = null) => {
     try {
+      const targetTunnel = tunnel || selectedTunnel;
       let defaultPath, filters, config;
 
       if (configType === 'wireguard') {
         defaultPath = `peer_${peerIndex + 1}.conf`;
         filters = [{ name: 'WireGuard 配置', extensions: ['conf'] }];
-        config = generateDetailPeerConfig(peerIndex);
+        config = generateDetailPeerConfig(peerIndex, targetTunnel);
       } else if (configType === 'surge') {
         defaultPath = `peer_${peerIndex + 1}_surge.conf`;
         filters = [{ name: 'Surge 配置', extensions: ['conf'] }];
-        config = generateSurgeDetailPeerConfig(peerIndex);
+        config = generateSurgeDetailPeerConfig(peerIndex, targetTunnel);
       }
 
       const filePath = await save({
@@ -636,9 +644,20 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
     try {
       const details = await invoke('get_tunnel_details', { tunnelId });
       setSelectedTunnel(details);
-      setActivePeerTab(0); // 重置 Peer Tab 为第一个
     } catch (error) {
       onShowToast('获取隧道详情失败: ' + error, 'error');
+    }
+  };
+
+  // 查看 Peer 列表
+  const handleViewPeerList = async (tunnelId) => {
+    try {
+      const details = await invoke('get_tunnel_details', { tunnelId });
+      setPeerListTunnel(details);
+      setShowPeerList(true);
+      setSelectedPeerForConfig(null);
+    } catch (error) {
+      onShowToast('获取 Peer 列表失败: ' + error, 'error');
     }
   };
 
@@ -765,6 +784,14 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
                   >
                     详情
                   </button>
+                  {tunnel.mode === 'server' && tunnel.peers && tunnel.peers.length > 0 && (
+                    <button
+                      onClick={() => handleViewPeerList(tunnel.id)}
+                      className="btn-secondary"
+                    >
+                      Peer 列表
+                    </button>
+                  )}
                   <button
                     onClick={() => handleDeleteTunnel(tunnel.id)}
                     className="btn-danger-outline"
@@ -1272,111 +1299,6 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
                   </div>
                 </>
               )}
-
-              {/* Peer 列表 */}
-              {selectedTunnel.peers && selectedTunnel.peers.length > 0 && (
-                <div className="peer-list-section">
-                  <h4>Peer 列表</h4>
-
-                  {/* Peer Tab 导航 */}
-                  <div className="tabs-nav">
-                    {selectedTunnel.peers.map((peer, index) => (
-                      <button
-                        key={index}
-                        className={`tab-button ${activePeerTab === index ? 'active' : ''}`}
-                        onClick={() => setActivePeerTab(index)}
-                      >
-                        Peer {index + 1}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Peer 配置内容 */}
-                  <div className="tabs-content">
-                    {selectedTunnel.peers.map((peer, index) => (
-                      activePeerTab === index && (
-                        <div key={index} className="tab-panel">
-                          {/* 配置类型 Tab */}
-                          <div className="config-type-tabs">
-                            <button
-                              className={`config-type-btn ${activePeerConfigTab === 'wireguard' ? 'active' : ''}`}
-                              onClick={() => setActivePeerConfigTab('wireguard')}
-                            >
-                              WireGuard
-                            </button>
-                            <button
-                              className={`config-type-btn ${activePeerConfigTab === 'qrcode' ? 'active' : ''}`}
-                              onClick={() => setActivePeerConfigTab('qrcode')}
-                            >
-                              二维码
-                            </button>
-                            <button
-                              className={`config-type-btn ${activePeerConfigTab === 'surge' ? 'active' : ''}`}
-                              onClick={() => setActivePeerConfigTab('surge')}
-                            >
-                              Surge
-                            </button>
-                          </div>
-
-                          {/* WireGuard 配置 */}
-                          {activePeerConfigTab === 'wireguard' && (
-                            <div className="config-result">
-                              <div className="config-header">
-                                <h5>WireGuard 配置 (Peer {index + 1})</h5>
-                                <div className="button-group-inline">
-                                  <button
-                                    onClick={() => handleCopyPeerConfig(index, 'wireguard')}
-                                    className="btn-save"
-                                  >
-                                    📋 复制
-                                  </button>
-                                  <button
-                                    onClick={() => handleSavePeerConfig(index, 'wireguard')}
-                                    className="btn-save"
-                                  >
-                                    💾 下载
-                                  </button>
-                                </div>
-                              </div>
-                              <pre className="config-content">{generateDetailPeerConfig(index)}</pre>
-                            </div>
-                          )}
-
-                          {/* 二维码 */}
-                          {activePeerConfigTab === 'qrcode' && (
-                            <PeerQrcodeDisplay peerIndex={index} generateQrcode={generatePeerQrcode} />
-                          )}
-
-                          {/* Surge 配置 */}
-                          {activePeerConfigTab === 'surge' && (
-                            <div className="config-result">
-                              <div className="config-header">
-                                <h5>Surge 配置 (Peer {index + 1})</h5>
-                                <div className="button-group-inline">
-                                  <button
-                                    onClick={() => handleCopyPeerConfig(index, 'surge')}
-                                    className="btn-save"
-                                  >
-                                    📋 复制
-                                  </button>
-                                  <button
-                                    onClick={() => handleSavePeerConfig(index, 'surge')}
-                                    className="btn-save"
-                                  >
-                                    💾 下载
-                                  </button>
-                                </div>
-                              </div>
-                              <pre className="config-content">{generateSurgeDetailPeerConfig(index)}</pre>
-                            </div>
-                          )}
-                        </div>
-                      )
-                    ))}
-                  </div>
-                </div>
-              )}
-
             </div>
             <div className="modal-footer">
               <button
@@ -1433,6 +1355,171 @@ peer = (public-key = ${selectedTunnel.public_key || ''}, allowed-ips = ${serverA
                   <div className="mode-option-desc">作为 VPN 客户端，连接到一个服务端</div>
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+{/* Peer 列表模态框 */}
+      {showPeerList && peerListTunnel && (
+        <div className="modal-overlay" onClick={() => setShowPeerList(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Peer 列表 - {peerListTunnel.name}</h3>
+              <button
+                onClick={() => setShowPeerList(false)}
+                className="btn-close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              {peerListTunnel.peers && peerListTunnel.peers.length > 0 ? (
+                <div className="peer-list-container">
+                  {peerListTunnel.peers.map((peer, index) => (
+                    <div key={index} className="peer-list-item">
+                      <div className="peer-list-item-header">
+                        <h4>Peer {index + 1}</h4>
+                        <button
+                          onClick={() => setSelectedPeerForConfig(index)}
+                          className="btn-secondary"
+                        >
+                          查看配置
+                        </button>
+                      </div>
+                      <div className="peer-list-item-body">
+                        <div className="detail-group">
+                          <label>公钥:</label>
+                          <div className="code-block">{peer.public_key}</div>
+                        </div>
+                        <div className="detail-group">
+                          <label>允许的 IP:</label>
+                          <div>{peer.allowed_ips}</div>
+                        </div>
+                        {peer.preshared_key && (
+                          <div className="detail-group">
+                            <label>预共享密钥:</label>
+                            <div className="code-block">{peer.preshared_key}</div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <p>暂无 Peer 配置</p>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                onClick={() => setShowPeerList(false)}
+                className="btn-primary"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Peer 配置模态框 */}
+      {selectedPeerForConfig !== null && peerListTunnel && (
+        <div className="modal-overlay" onClick={() => setSelectedPeerForConfig(null)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Peer {selectedPeerForConfig + 1} 配置</h3>
+              <button
+                onClick={() => setSelectedPeerForConfig(null)}
+                className="btn-close"
+              >
+                ✕
+              </button>
+            </div>
+            <div className="modal-body">
+              {/* 配置类型 Tab */}
+              <div className="config-type-tabs">
+                <button
+                  className={`config-type-btn ${activePeerConfigTab === 'wireguard' ? 'active' : ''}`}
+                  onClick={() => setActivePeerConfigTab('wireguard')}
+                >
+                  WireGuard
+                </button>
+                <button
+                  className={`config-type-btn ${activePeerConfigTab === 'qrcode' ? 'active' : ''}`}
+                  onClick={() => setActivePeerConfigTab('qrcode')}
+                >
+                  二维码
+                </button>
+                <button
+                  className={`config-type-btn ${activePeerConfigTab === 'surge' ? 'active' : ''}`}
+                  onClick={() => setActivePeerConfigTab('surge')}
+                >
+                  Surge
+                </button>
+              </div>
+
+              {/* WireGuard 配置 */}
+              {activePeerConfigTab === 'wireguard' && (
+                <div className="config-result">
+                  <div className="config-header">
+                    <h5>WireGuard 配置</h5>
+                    <div className="button-group-inline">
+                      <button
+                        onClick={() => handleCopyPeerConfig(selectedPeerForConfig, 'wireguard', peerListTunnel)}
+                        className="btn-save"
+                      >
+                        📋 复制
+                      </button>
+                      <button
+                        onClick={() => handleSavePeerConfig(selectedPeerForConfig, 'wireguard', peerListTunnel)}
+                        className="btn-save"
+                      >
+                        💾 下载
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="config-content">{generateDetailPeerConfig(selectedPeerForConfig, peerListTunnel)}</pre>
+                </div>
+              )}
+
+              {/* 二维码 */}
+              {activePeerConfigTab === 'qrcode' && (
+                <PeerQrcodeDisplay peerIndex={selectedPeerForConfig} generateQrcode={(index) => generatePeerQrcode(index, peerListTunnel)} />
+              )}
+
+              {/* Surge 配置 */}
+              {activePeerConfigTab === 'surge' && (
+                <div className="config-result">
+                  <div className="config-header">
+                    <h5>Surge 配置</h5>
+                    <div className="button-group-inline">
+                      <button
+                        onClick={() => handleCopyPeerConfig(selectedPeerForConfig, 'surge', peerListTunnel)}
+                        className="btn-save"
+                      >
+                        📋 复制
+                      </button>
+                      <button
+                        onClick={() => handleSavePeerConfig(selectedPeerForConfig, 'surge', peerListTunnel)}
+                        className="btn-save"
+                      >
+                        💾 下载
+                      </button>
+                    </div>
+                  </div>
+                  <pre className="config-content">{generateSurgeDetailPeerConfig(selectedPeerForConfig, peerListTunnel)}</pre>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button
+                onClick={() => setSelectedPeerForConfig(null)}
+                className="btn-primary"
+              >
+                关闭
+              </button>
             </div>
           </div>
         </div>
