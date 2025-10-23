@@ -187,8 +187,8 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
                     系统路径中也未找到: {}\n\
                     \n\
                     解决方案:\n\
-                    1. 将 wireguard-go 复制到 /usr/local/bin/\n\
-                    2. 或安装 wireguard-go 包: sudo apt install wireguard-tools",
+                    1. 将 wireguard-go 复制到 /usr/local/bin/ (或 /opt/wg-x/wireguard-go)\n\
+                    2. 或安装 wireguard-go 包: sudo apt install wireguard-go",
                     config.wireguard_go_path, e
                 ));
             }
