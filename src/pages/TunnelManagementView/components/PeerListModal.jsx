@@ -1,4 +1,4 @@
-function PeerListModal({ tunnel, onClose, onViewPeerConfig }) {
+function PeerListModal({ tunnel, onClose, onViewPeerConfig, formatBytes, formatTime }) {
   if (!tunnel) {
     return null;
   }
@@ -30,30 +30,18 @@ function PeerListModal({ tunnel, onClose, onViewPeerConfig }) {
                     </button>
                   </div>
                   <div className="peer-list-item-body">
-                    {peer.remark && (
-                      <div className="detail-group">
-                        <label>备注:</label>
-                        <div>{peer.remark}</div>
-                      </div>
-                    )}
                     <div className="detail-group">
-                      <label>客户端 IP:</label>
-                      <div>{peer.address || 'N/A'}</div>
+                      <label>上传流量:</label>
+                      <div>{formatBytes ? formatBytes(peer.tx_bytes || 0) : '0 B'}</div>
                     </div>
                     <div className="detail-group">
-                      <label>公钥:</label>
-                      <div className="code-block">{peer.public_key}</div>
+                      <label>下载流量:</label>
+                      <div>{formatBytes ? formatBytes(peer.rx_bytes || 0) : '0 B'}</div>
                     </div>
                     <div className="detail-group">
-                      <label>允许的 IP:</label>
-                      <div>{peer.allowed_ips}</div>
+                      <label>上次握手:</label>
+                      <div>{formatTime ? formatTime(peer.last_handshake) : '从未'}</div>
                     </div>
-                    {peer.preshared_key && (
-                      <div className="detail-group">
-                        <label>预共享密钥:</label>
-                        <div className="code-block">{peer.preshared_key}</div>
-                      </div>
-                    )}
                   </div>
                 </div>
               ))}

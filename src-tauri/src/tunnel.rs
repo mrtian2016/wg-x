@@ -221,6 +221,78 @@ pub fn parse_interface_status(status: &str) -> (u64, u64, Option<i64>) {
     (tx_bytes, rx_bytes, last_handshake)
 }
 
+// 解析每个 peer 的统计信息（从 UAPI 响应中）
+// 返回: HashMap<public_key, (tx_bytes, rx_bytes, last_handshake)>
+pub fn parse_peer_stats_from_uapi(status: &str) -> std::collections::HashMap<String, (u64, u64, Option<i64>)> {
+    use std::collections::HashMap;
+    let mut peer_stats = HashMap::new();
+
+    let mut current_peer_key: Option<String> = None;
+    let mut current_tx: u64 = 0;
+    let mut current_rx: u64 = 0;
+    let mut current_handshake: Option<i64> = None;
+
+    for line in status.lines() {
+        let line = line.trim();
+
+        if line.starts_with("public_key=") {
+            // 保存上一个 peer 的数据
+            if let Some(key) = current_peer_key.take() {
+                peer_stats.insert(key, (current_tx, current_rx, current_handshake));
+            }
+
+            // 开始新的 peer
+            if let Some(value) = line.strip_prefix("public_key=") {
+                // UAPI 返回的是十六进制格式，需要转换为 base64
+                if let Ok(base64_key) = hex_to_base64(value) {
+                    current_peer_key = Some(base64_key);
+                    current_tx = 0;
+                    current_rx = 0;
+                    current_handshake = None;
+                }
+            }
+        } else if line.starts_with("rx_bytes=") {
+            if let Some(value) = line.strip_prefix("rx_bytes=") {
+                current_rx = value.parse().unwrap_or(0);
+            }
+        } else if line.starts_with("tx_bytes=") {
+            if let Some(value) = line.strip_prefix("tx_bytes=") {
+                current_tx = value.parse().unwrap_or(0);
+            }
+        } else if line.starts_with("last_handshake_time_sec=") {
+            if let Some(value) = line.strip_prefix("last_handshake_time_sec=") {
+                if let Ok(ts) = value.parse::<i64>() {
+                    if ts > 0 {
+                        current_handshake = Some(ts);
+                    }
+                }
+            }
+        }
+    }
+
+    // 保存最后一个 peer 的数据
+    if let Some(key) = current_peer_key {
+        peer_stats.insert(key, (current_tx, current_rx, current_handshake));
+    }
+
+    peer_stats
+}
+
+// 将十六进制编码的密钥转换为 Base64 编码
+fn hex_to_base64(hex_key: &str) -> Result<String, String> {
+    let bytes = hex::decode(hex_key.trim())
+        .map_err(|e| format!("十六进制解码失败: {}", e))?;
+
+    if bytes.len() != 32 {
+        return Err(format!(
+            "密钥长度错误: 应为32字节,实际为{}字节",
+            bytes.len()
+        ));
+    }
+
+    Ok(BASE64.encode(&bytes))
+}
+
 // Peer 配置
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PeerConfig {
@@ -254,6 +326,13 @@ pub struct TunnelPeerConfig {
     pub persistent_keepalive: Option<u16>,
     #[serde(default)]
     pub remark: Option<String>, // 备注信息，用于标识客户端
+    // 运行时统计信息（保存配置时会为 0，运行时获取真实数据）
+    #[serde(default)]
+    pub tx_bytes: u64, // 上传流量
+    #[serde(default)]
+    pub rx_bytes: u64, // 下载流量
+    #[serde(default)]
+    pub last_handshake: Option<i64>, // 最后握手时间
 }
 
 // 隧道配置(用户创建的配置)
@@ -621,6 +700,77 @@ pub async fn get_tunnel_details(
         None
     };
 
+    // 获取每个 peer 的流量统计信息
+    let peers_with_stats = if is_running {
+        let mut peers = tunnel_config.peers.clone();
+        log::info!("隧道正在运行，获取 {} 个 peer 的统计信息", peers.len());
+
+        // 根据平台获取 peer 统计信息
+        #[cfg(target_os = "windows")]
+        {
+            match crate::tunnel_windows::get_windows_peer_stats(&interface_name) {
+                Ok(peer_stats) => {
+                    log::info!("获取到 {} 个 peer 的统计数据", peer_stats.len());
+                    for peer in &mut peers {
+                        if let Some((tx, rx, handshake)) = peer_stats.get(&peer.public_key) {
+                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                                &peer.public_key[..8], tx, rx, handshake);
+                            peer.tx_bytes = *tx;
+                            peer.rx_bytes = *rx;
+                            peer.last_handshake = *handshake;
+                        } else {
+                            log::warn!("未找到 peer {} 的统计数据", &peer.public_key[..8]);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("获取 Windows peer 统计信息失败: {}", e);
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            match crate::tunnel_macos::get_macos_peer_stats(&interface_name).await {
+                Ok(peer_stats) => {
+                    log::info!("获取到 {} 个 peer 的统计数据", peer_stats.len());
+                    for peer in &mut peers {
+                        if let Some((tx, rx, handshake)) = peer_stats.get(&peer.public_key) {
+                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                                &peer.public_key[..8], tx, rx, handshake);
+                            peer.tx_bytes = *tx;
+                            peer.rx_bytes = *rx;
+                            peer.last_handshake = *handshake;
+                        } else {
+                            log::warn!("未找到 peer {} 的统计数据", &peer.public_key[..8]);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("获取 macOS peer 统计信息失败: {}", e);
+                }
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // TODO: Linux 平台的 peer 统计信息获取
+            // 需要通过 IPC 获取每个 peer 的统计信息
+            log::warn!("Linux 平台暂不支持获取单个 peer 的统计信息");
+        }
+        peers
+    } else {
+        log::info!("隧道未运行，返回 {} 个 peer (无统计信息)", tunnel_config.peers.len());
+        tunnel_config.peers.clone()
+    };
+
+    log::info!("返回 {} 个 peer，第一个 peer 统计: tx={}, rx={}, handshake={:?}",
+        peers_with_stats.len(),
+        peers_with_stats.get(0).map(|p| p.tx_bytes).unwrap_or(0),
+        peers_with_stats.get(0).map(|p| p.rx_bytes).unwrap_or(0),
+        peers_with_stats.get(0).and_then(|p| p.last_handshake)
+    );
+
     Ok(TunnelStatus {
         id: tunnel_id,
         name: tunnel_config.name.clone(),
@@ -640,7 +790,7 @@ pub async fn get_tunnel_details(
         mode: tunnel_config.mode.clone(),
         server_endpoint: tunnel_config.server_endpoint.clone(),
         server_allowed_ips: tunnel_config.server_allowed_ips.clone(),
-        peers: tunnel_config.peers.clone(),
+        peers: peers_with_stats,
     })
 }
 

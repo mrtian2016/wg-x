@@ -401,6 +401,65 @@ fn parse_windows_dump(dump: &str) -> (u64, u64, Option<i64>) {
     (tx_total, rx_total, last_handshake)
 }
 
+// 解析每个 peer 的统计信息
+// 返回: HashMap<public_key, (tx_bytes, rx_bytes, last_handshake)>
+fn parse_windows_dump_per_peer(dump: &str) -> std::collections::HashMap<String, (u64, u64, Option<i64>)> {
+    use std::collections::HashMap;
+    let mut peer_stats = HashMap::new();
+
+    for line in dump.lines() {
+        let cols: Vec<&str> = line.split('\t').collect();
+
+        // Peer 行至少包含 7 列
+        // 格式: public_key, preshared, endpoint, allowed_ips, last_handshake, rx, tx, [nsec], persistent
+        if cols.len() >= 7 {
+            if let Some(public_key) = cols.get(0) {
+                let public_key = public_key.to_string();
+
+                // 注意：dump 格式中，第6列是 tx，第5列是 rx
+                let tx = cols.get(6).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+                let rx = cols.get(5).and_then(|v| v.parse::<u64>().ok()).unwrap_or(0);
+
+                let last_handshake = cols.get(4)
+                    .and_then(|v| v.parse::<i64>().ok())
+                    .and_then(|sec| if sec > 0 { Some(sec) } else { None });
+
+                peer_stats.insert(public_key, (tx, rx, last_handshake));
+            }
+        }
+    }
+
+    peer_stats
+}
+
+// 获取每个 peer 的统计信息
+pub fn get_windows_peer_stats(interface: &str) -> Result<std::collections::HashMap<String, (u64, u64, Option<i64>)>, String> {
+    log::info!("获取 Windows 接口每个 peer 的统计信息: {}", interface);
+
+    let (_, wg_path) = locate_wireguard_tools()?;
+    log::info!("wg.exe 路径: {:?}", wg_path);
+
+    let output = std::process::Command::new(&wg_path)
+        .args(["show", interface, "dump"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("执行 wg.exe 失败: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        log::error!("获取接口状态失败: {}", stderr.trim());
+        return Err(format!("获取 WireGuard 接口状态失败: {}", stderr.trim()));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    log::debug!("接口 dump 输出:\n{}", stdout);
+
+    let peer_stats = parse_windows_dump_per_peer(&stdout);
+    log::info!("解析到 {} 个 peer 的统计信息", peer_stats.len());
+
+    Ok(peer_stats)
+}
+
 pub fn get_windows_interface_counters(interface: &str) -> Result<(u64, u64, Option<i64>), String> {
     log::info!("获取 Windows 接口统计信息: {}", interface);
 

@@ -225,7 +225,7 @@ function TunnelManagementView({ onShowToast }) {
         presharedKey: psk,
         endpoint: '', // 服务端模式下不需要 endpoint
         address: clientIp, // 客户端的 VPN IP 地址
-        allowedIps: '0.0.0.0/0', // 路由规则，默认全流量
+        allowedIps: clientIp, // 服务端模式下，这里应该是客户端的 VPN IP，这样服务端才能路由到客户端
         persistentKeepalive: 0, // 服务端默认为 0，不需要保持连接
         remark: tempRemark.trim(), // 备注信息
       };
@@ -270,7 +270,7 @@ function TunnelManagementView({ onShowToast }) {
     // 生成客户端配置内容 - 完整可用的配置
     const clientConfig = `[Interface]
 PrivateKey = ${clientPrivateKey}
-Address = ${peer.allowedIps}
+Address = ${peer.address || peer.allowedIps}
 ${config.dns ? `DNS = ${config.dns}` : 'DNS = 8.8.8.8, 8.8.4.4'}
 ${config.mtu ? `MTU = ${config.mtu}` : 'MTU = 1420'}
 
@@ -312,6 +312,10 @@ PersistentKeepalive = 25`;
     const clientPrivateKey = peer.client_private_key || '<客户端私钥>';
     const clientAddress = peer.address || '<客户端IP地址>';
 
+    // 调试:打印 peer 对象看看 preshared_key 的值
+    console.log('生成客户端配置 - peer 对象:', peer);
+    console.log('preshared_key 值:', peer.preshared_key);
+
     const clientConfig = `[Interface]
 PrivateKey = ${clientPrivateKey}
 Address = ${clientAddress}
@@ -320,7 +324,7 @@ MTU = 1420
 
 [Peer]
 PublicKey = ${targetTunnel.public_key || '<服务端公钥>'}
-${peer.preshared_key ? `PreSharedKey = ${peer.preshared_key}` : '# PreSharedKey = <预共享密钥，可选>'}
+${(peer.preshared_key && peer.preshared_key.trim() !== '') ? `PreSharedKey = ${peer.preshared_key}` : '# PreSharedKey = <预共享密钥，可选>'}
 AllowedIPs = ${serverAllowedIps}
 Endpoint = ${serverEndpoint}
 PersistentKeepalive = 25`;
@@ -676,6 +680,14 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
   const handleViewPeerList = async (tunnelId) => {
     try {
       const details = await invoke('get_tunnel_details', { tunnelId });
+      console.log('获取到的隧道详情:', details);
+      console.log('Peers 数量:', details.peers?.length);
+      if (details.peers && details.peers.length > 0) {
+        console.log('第一个 peer:', details.peers[0]);
+        console.log('第一个 peer 的 tx_bytes:', details.peers[0].tx_bytes);
+        console.log('第一个 peer 的 rx_bytes:', details.peers[0].rx_bytes);
+        console.log('第一个 peer 的 last_handshake:', details.peers[0].last_handshake);
+      }
       setPeerListTunnel(details);
       setShowPeerList(true);
       setSelectedPeerForConfig(null);
@@ -1219,7 +1231,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                   onChange={(e) => setTempRemark(e.target.value)}
                   placeholder="例如：张三的手机、办公电脑、家里的路由器等"
                   autoFocus
-                  onKeyPress={(e) => {
+                  onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       handleConfirmQuickAdd();
                     }
@@ -1245,6 +1257,8 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
           tunnel={peerListTunnel}
           onClose={() => setShowPeerList(false)}
           onViewPeerConfig={(index) => setSelectedPeerForConfig(index)}
+          formatBytes={formatBytes}
+          formatTime={formatTime}
         />
       )}
 

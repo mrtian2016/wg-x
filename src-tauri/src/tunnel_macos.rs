@@ -62,6 +62,8 @@ pub fn start_wireguard_macos(
     let escaped_ip = ip_only.replace('\'', "'\\''");
     let escaped_netmask = netmask.replace('\'', "'\\''");
 
+    log::info!("配置接口 {} 的 IP 地址: {} (netmask: {})", interface_name, ip_only, netmask);
+
     // 获取当前用户 ID，用于设置 socket 文件所有者
     let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
     let escaped_user = current_user.replace('\'', "'\\''");
@@ -224,8 +226,9 @@ pub async fn configure_interface(
                     }
                 }
             }
-
+            
             if let Some(ref psk) = peer.preshared_key {
+                log::info!("Peer预共享密钥: {}", psk);
                 if !psk.is_empty() {
                     // 验证预共享密钥:不能和公钥相同
                     if psk == &peer.public_key {
@@ -365,6 +368,22 @@ pub async fn get_tunnel_status_impl(
         .await
         .unwrap_or_default();
     parse_interface_status(&status_str)
+}
+
+// macOS: 获取每个 peer 的统计信息
+pub async fn get_macos_peer_stats(
+    interface_name: &str,
+) -> Result<std::collections::HashMap<String, (u64, u64, Option<i64>)>, String> {
+    log::info!("获取 macOS 接口每个 peer 的统计信息: {}", interface_name);
+
+    let status_str = get_interface_status(interface_name.to_string()).await?;
+
+    log::debug!("UAPI 响应:\n{}", status_str);
+
+    let peer_stats = crate::tunnel::parse_peer_stats_from_uapi(&status_str);
+    log::info!("解析到 {} 个 peer 的统计信息", peer_stats.len());
+
+    Ok(peer_stats)
 }
 
 // macOS: 启动隧道的平台特定部分
