@@ -245,6 +245,8 @@ pub struct InterfaceConfig {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct TunnelPeerConfig {
     pub public_key: String,
+    #[serde(default)]
+    pub client_private_key: Option<String>,
     pub preshared_key: Option<String>,
     pub endpoint: Option<String>,
     pub allowed_ips: String,
@@ -256,12 +258,18 @@ pub struct TunnelPeerConfig {
 pub struct TunnelConfig {
     pub id: String,
     pub name: String,
+    // 运行模式: 'server' 或 'client'
+    #[serde(default)]
+    pub mode: String,
     // Interface 配置
     pub private_key: String,
     pub address: String,
     pub listen_port: String, // 空字符串表示自动
     pub dns: String,
     pub mtu: String,
+    // 服务端的公网 IP 或域名（仅服务端）
+    #[serde(default)]
+    pub server_endpoint: String,
     // Peer 配置 - 支持多个 Peer
     #[serde(default)]
     pub peers: Vec<TunnelPeerConfig>,
@@ -294,6 +302,14 @@ pub struct TunnelStatus {
     pub last_handshake: Option<i64>,
     pub public_key: Option<String>,
     pub allowed_ips: Option<String>,
+    // 运行模式和服务端地址
+    #[serde(default)]
+    pub mode: String,
+    #[serde(default)]
+    pub server_endpoint: String,
+    // Peer 配置列表
+    #[serde(default)]
+    pub peers: Vec<TunnelPeerConfig>,
 }
 
 // 启动隧道
@@ -613,6 +629,9 @@ pub async fn get_tunnel_details(
         last_handshake,
         public_key,
         allowed_ips,
+        mode: tunnel_config.mode.clone(),
+        server_endpoint: tunnel_config.server_endpoint.clone(),
+        peers: tunnel_config.peers.clone(),
     })
 }
 
@@ -792,6 +811,9 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                                 last_handshake,
                                 public_key: None, // 不暴露公钥
                                 allowed_ips,
+                                mode: tunnel_config.mode.clone(),
+                                server_endpoint: tunnel_config.server_endpoint.clone(),
+                                peers: tunnel_config.peers.clone(),
                             };
 
                             tunnels.push(tunnel_status);
