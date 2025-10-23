@@ -823,7 +823,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                     <label>运行模式 *</label>
                     <div className="mode-display">
                       <span className="mode-badge" data-mode={config.mode}>
-                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '💻 客户端' : '未选择'}
+                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '客户端' : '未选择'}
                       </span>
                       <small>创建后无法修改模式，请谨慎选择</small>
                     </div>
@@ -834,7 +834,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                     <label>运行模式</label>
                     <div className="mode-display">
                       <span className="mode-badge" data-mode={config.mode}>
-                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '💻 客户端' : '服务端'}
+                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '客户端' : '服务端'}
                       </span>
                     </div>
                   </div>

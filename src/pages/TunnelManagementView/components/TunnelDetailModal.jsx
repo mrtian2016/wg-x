@@ -21,7 +21,7 @@ function TunnelDetailModal({ tunnel, onClose, formatBytes, formatTime }) {
             <label>运行模式:</label>
             <div>
               <span className="mode-badge" data-mode={tunnel.mode || 'server'}>
-                {tunnel.mode === 'server' ? '服务端' : tunnel.mode === 'client' ? '💻 客户端' : '服务端'}
+                {tunnel.mode === 'server' ? '服务端' : tunnel.mode === 'client' ? '客户端' : '服务端'}
               </span>
             </div>
           </div>
