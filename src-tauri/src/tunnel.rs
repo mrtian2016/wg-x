@@ -249,6 +249,7 @@ pub struct TunnelPeerConfig {
     pub client_private_key: Option<String>,
     pub preshared_key: Option<String>,
     pub endpoint: Option<String>,
+    pub address: Option<String>, // 客户端的 VPN IP 地址
     pub allowed_ips: String,
     pub persistent_keepalive: Option<u16>,
 }
@@ -270,6 +271,9 @@ pub struct TunnelConfig {
     // 服务端的公网 IP 或域名（仅服务端）
     #[serde(default)]
     pub server_endpoint: String,
+    // 服务端允许客户端访问的网络范围（仅服务端）
+    #[serde(default)]
+    pub server_allowed_ips: String,
     // Peer 配置 - 支持多个 Peer
     #[serde(default)]
     pub peers: Vec<TunnelPeerConfig>,
@@ -307,6 +311,8 @@ pub struct TunnelStatus {
     pub mode: String,
     #[serde(default)]
     pub server_endpoint: String,
+    #[serde(default)]
+    pub server_allowed_ips: String,
     // Peer 配置列表
     #[serde(default)]
     pub peers: Vec<TunnelPeerConfig>,
@@ -631,6 +637,7 @@ pub async fn get_tunnel_details(
         allowed_ips,
         mode: tunnel_config.mode.clone(),
         server_endpoint: tunnel_config.server_endpoint.clone(),
+        server_allowed_ips: tunnel_config.server_allowed_ips.clone(),
         peers: tunnel_config.peers.clone(),
     })
 }
@@ -813,6 +820,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                                 allowed_ips,
                                 mode: tunnel_config.mode.clone(),
                                 server_endpoint: tunnel_config.server_endpoint.clone(),
+                                server_allowed_ips: tunnel_config.server_allowed_ips.clone(),
                                 peers: tunnel_config.peers.clone(),
                             };
 

@@ -260,7 +260,7 @@ cargo fmt
 cargo clippy
 ```
 
-## 📝 技术说明
+## 技术说明
 
 ### WireGuard-Go 集成
 
