@@ -4,6 +4,9 @@ use std::collections::HashMap;
 use tauri::Manager;
 use tokio::sync::Mutex;
 
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+
 use crate::commands::key_management::private_key_to_public;
 
 // 平台特定模块
@@ -73,6 +76,11 @@ lazy_static::lazy_static! {
     pub static ref TUNNEL_CONFIGS: Mutex<HashMap<String, (String, InterfaceConfig)>> = Mutex::new(HashMap::new());
 }
 
+// Windows 创建进程标志：CREATE_NO_WINDOW = 0x08000000
+// 用于隐藏控制台窗口
+#[cfg(target_os = "windows")]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
 // 检查接口是否存在
 pub fn interface_exists(name: &str) -> bool {
     #[cfg(target_os = "macos")]
@@ -104,6 +112,7 @@ pub fn interface_exists(name: &str) -> bool {
         if let Ok((_, wg_path)) = crate::tunnel_windows::locate_wireguard_tools() {
             if let Ok(output) = std::process::Command::new(&wg_path)
                 .args(["show", "interfaces"])
+                .creation_flags(CREATE_NO_WINDOW)
                 .output()
             {
                 if output.status.success() {
