@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "WG-X",
+  "productName": "Wireguard-X",
   "version": "0.2.1",
   "identifier": "net.pyer.wg-x",
   "build": {
