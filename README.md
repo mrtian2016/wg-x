@@ -1,216 +1,211 @@
-## WG-X (WireGuard X)
+# WireGuard X (WG-X)
 
-一个基于 Tauri 的跨平台 WireGuard 隧道管理与配置生成工具。支持 macOS / Linux / Windows，提供可视化的隧道启动/停止、服务端与 Peer 管理、历史记录与二维码导出、WebDAV 双向同步、以及一键生成多种场景配置（WireGuard、Surge、iKuai、MikroTik、OpenWrt）。内置自动更新与（Linux）守护进程模式。
+一个跨平台的 WireGuard VPN 客户端和隧道管理工具，支持 macOS、Windows 和 Linux。提供友好的图形界面和强大的配置管理功能。
 
-> 运行环境：Node.js 18+、Rust/Cargo、Tauri 2。桌面端集成 Rust 后端；Web 预览可用 Vite 启动但不具备隧道控制能力。
+![Version](https://img.shields.io/badge/version-0.2.3-blue)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-### 截图
+## 🌟 主要功能特性
 
-![](screens/iShot_2025-10-23_23.44.49.png)
+### 隧道管理
+- **隧道列表管理** - 创建、保存、加载、删除和管理多个 WireGuard 隧道配置
+- **隧道启动/停止** - 一键启动和停止 WireGuard 隧道
+- **隧道详情查看** - 实时查看隧道的详细信息和运行状态
+- **隧道状态监控** - 获取隧道列表和详细的隧道运行统计信息
+- **Peer 统计监听** - 实时监听和推送 Peer 连接统计数据
 
-### 功能特性
+### Peer 配置生成
+- **密钥对生成** - 使用 X25519 算法生成安全的公私钥对
+- **预共享密钥生成** - 生成用于额外加密的预共享密钥 (PSK)
+- **本地地址自动生成** - 支持自动生成私有网络地址 (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16)
+- **AllowedIPs 自动配置** - 根据本地 IP 自动生成允许的 IP 段配置
+- **QR 码生成** - 生成 WireGuard 配置的二维码，方便移动设备扫描导入
 
-- 隧道管理
-  - 列表查看、启动/停止、状态与流量统计（跨平台实现）
-  - 支持服务端模式与客户端模式；智能生成接口名（各平台规则不同）
-- 密钥与配置生成
-  - 生成私钥/公钥、预共享密钥；由私钥计算公钥
-  - 生成客户端配置预览与保存（含二维码）
-  - 一键输出：WireGuard、Surge、iKuai、MikroTik、OpenWrt
-- 服务端与历史
-  - 多服务端配置管理（持久化至 App 数据目录）
-  - 历史记录查看、筛选、导出 TXT/ZIP、清空
-- WebDAV 同步
-  - 手动/自动双向同步服务端配置与历史记录
-  - 同步进度与最近同步时间展示
-- 更新与日志
-  - 自动更新（GitHub Releases 最新版本）
-  - 应用/守护进程日志输出与保存
-- Linux 守护进程（可选）
-  - 通过 `wg-x daemon` 运行 root 模式守护进程
-  - 提供 systemd 单元文件，支持安装/启停/开机自启
+### 多格式配置输出
+支持生成多种设备和平台的配置文件：
+- **WireGuard 配置** (.conf) - 标准 WireGuard 格式，可用于 wg-quick 等工具
+- **iKuai 配置** - 爱快路由器专用格式
+- **Surge 配置** - Surge 代理工具专用格式
+- **MikroTik 配置** - MikroTik 路由器专用格式
+- **OpenWrt 配置** - OpenWrt 开源路由器系统专用格式
 
+### 多服务器管理
+- **支持多服务器** - 保存和管理多个 VPN 服务器配置
+- **服务器详情编辑** - 查看和编辑服务器的完整配置信息
+- **Peer ID 管理** - 为每个服务器自动分配和管理 Peer ID
+- **配置迁移** - 自动迁移旧版本的单服务器配置到新的多服务器架构
 
-### 架构总览
+### 历史记录管理
+- **配置历史保存** - 自动保存所有生成的配置历史记录
+- **历史列表查看** - 按时间顺序查看所有历史配置
+- **按服务器筛选** - 按照所属的 VPN 服务器筛选历史记录
+- **批量导出** - 导出所有配置为 ZIP 压缩包
+- **快速清空** - 一键删除所有历史记录
 
-- 前端：Vite + React（`src/`）
-  - pages：`TunnelManagementView`、`ConfigGeneratorView`、`HistoryView`、`ServerManagementView`、`WebDavSettingsView`
-  - components：Toast、ConfirmDialog、UpdateProgressDialog、DaemonPanel 等
-  - utils：更新管理、通知等
-- 后端：Tauri + Rust（`src-tauri/`）
-  - 平台实现：`tunnel_macos.rs`、`tunnel_linux.rs`、`tunnel_windows.rs`
-  - 核心隧道管理：`tunnel.rs`（启动/停止/状态、接口名规则、密钥转换、DNS 解析等）
-  - 命令层：`src-tauri/src/commands/*`（密钥、模板生成、持久化、服务端、历史、WebDAV）
-  - 同步模块：`webdav.rs`、`sync.rs`
-  - Linux 守护：`daemon.rs`、`daemon_ipc.rs`、`daemon_install.rs`
-- 配置与打包：`src-tauri/tauri.conf.json`（应用标识、外部二进制、自动更新端点等）
+### WebDAV 云同步
+- **WebDAV 配置** - 支持保存 WebDAV 服务器连接信息
+- **连接测试** - 测试与 WebDAV 服务器的连接状态
+- **单向同步** - 支持上传到 WebDAV 或从 WebDAV 下载
+- **双向同步** - 智能合并和同步本地与远程配置
+- **自动同步** - 设置同步间隔，实现定时自动同步
 
+### 本地网络探测
+- **本地 IP 检测** - 获取设备的网络接口 IP 地址
+- **多接口支持** - 获取所有本地网络接口的 IP 地址列表
+- **虚拟设备过滤** - 自动过滤虚拟网络接口
+- **跨平台支持** - 在 Windows、macOS 和 Linux 上自动检测
 
-### 目录结构（节选）
+### Linux 守护进程支持
+- **守护进程模式** - Linux 上支持后台守护进程运行
+- **服务管理** - 安装、卸载、启动、停止 WG-X 系统服务
+- **自启动控制** - 设置守护进程的自启动状态
+- **日志查看** - 查看守护进程的运行日志
 
-```
-.
-├─ src/                        # React 前端
-│  ├─ pages/
-│  │  ├─ TunnelManagementView/
-│  │  ├─ ConfigGeneratorView/
-│  │  ├─ HistoryView/
-│  │  ├─ ServerManagementView/
-│  │  └─ WebDavSettingsView/
-│  ├─ components/
-│  ├─ hooks/ utils/ styles/
-│  └─ App.jsx main.jsx
-├─ src-tauri/                  # Rust + Tauri 后端
-│  ├─ src/
-│  │  ├─ tunnel.rs tunnel_*.rs
-│  │  ├─ commands/*.rs
-│  │  ├─ webdav.rs sync.rs
-│  │  └─ daemon*.rs (Linux)
-│  └─ tauri.conf.json
-├─ public/ dist/               # 静态资源与构建产物
-├─ screens/                    # 截图（用于 PR）
-├─ scripts/                    # 自动化脚本（版本同步等）
-├─ wg-x-daemon.service         # Linux systemd 单元文件
-├─ package.json vite.config.js
-└─ AGENTS.md CLAUDE.md
-```
+### 应用更新管理
+- **自动更新检查** - 应用启动时自动检查是否有新版本
+- **手动检查** - 用户可以随时手动检查更新
+- **自动下载安装** - 支持自动下载新版本并安装
+- **进度显示** - 显示更新下载和安装的进度
 
+## 📸 应用界面预览
 
-### 快速开始
+![WireGuard X 隧道管理界面](screens/iShot_2025-10-23_23.44.49.png)
 
-- 安装依赖（首次）
-  - Node.js 18+、Rust（含 `cargo`）
-  - 平台依赖见“平台依赖与权限”
-- 安装前端依赖
+*隧道列表管理界面 - 显示多个隧道的配置和状态*
 
-```bash
-npm install
-```
+## 🛠️ 技术栈
 
-- Web 预览（仅 UI，无法控制隧道）
+### 前端
+- **React 19.1.0** - UI 框架
+- **Vite 7.0.4** - 快速开发和构建工具
+- **Tauri 2** - 跨平台桌面应用框架
 
-```bash
-npm run dev
-```
+### Rust 后端
+- **tauri 2** - 应用框架核心
+- **tokio 1** - 异步运行时
+- **x25519-dalek 2** - X25519 密钥交换实现
+- **qrcode 0.14** - 二维码生成
+- **serde/serde_json** - 序列化反序列化
+- **reqwest 0.12.24** - HTTP 客户端（WebDAV 同步）
+- **quick-xml 0.38.3** - XML 解析（WebDAV 协议）
+- **chrono 0.4.42** - 日期时间处理
 
-- 桌面开发（推荐，具备完整能力）
+### Tauri 插件
+- **tauri-plugin-opener** - 在浏览器中打开 URL
+- **tauri-plugin-dialog** - 文件选择对话框
+- **tauri-plugin-shell** - Shell 命令执行
+- **tauri-plugin-cli** - 命令行参数处理
+- **tauri-plugin-log** - 日志管理
+- **tauri-plugin-process** - 进程管理
+- **tauri-plugin-updater** - 应用自动更新
 
-```bash
-npm run tauri dev
-```
+## 📦 安装
 
-- 构建 Web 资源 / 桌面安装包
+### 系统要求
+- **macOS**: 10.13 或更高版本
+- **Windows**: Windows 10 或更高版本
+  - ⚠️ **需要先安装官方 WireGuard 程序** - 从 [wireguard.com](https://www.wireguard.com/install/) 下载安装
+- **Linux**: 支持 glibc 的 Linux 发行版
 
-```bash
-npm run build
-npm run tauri build
-```
+### 下载安装
+从 [Releases](https://github.com/pyer/wg-x/releases) 页面下载对应平台的安装文件：
+- macOS: `.dmg` 文件
+- Windows: `.msi` 或 `.exe` 文件（需先安装 WireGuard）
+- Linux: `.deb` 或其他发行版对应的安装包
 
-- 版本同步（发布后同步 Web 与桌面端版本号）
+### ⚠️ macOS 用户注意事项
 
-```bash
-npm run version:update
-```
+首次打开应用时，macOS 系统可能会提示 **"WireGuard Config Generator.app"已损坏，无法打开。你应该将它移到废纸篓。**
 
+这是因为应用未经过 Apple 验证。请按以下步骤解决：
 
-### 平台依赖与权限
-
-- macOS
-  - 通过 `osascript` 进行一次性权限提升，启动 `wireguard-go`、配置 IP/路由并修改 UAPI socket 权限。
-  - `wireguard-go` 作为外部二进制随应用打包（`bundle.externalBin`）。
-- Linux
-  - 仅需 `wireguard-go`（用户态实现），不依赖 `wg`/`wg-quick`。应用优先使用守护进程安装脚本放置的 `/opt/wg-x/wireguard-go`，否则从系统路径查找。
-  - 支持守护进程模式：以 root 权限运行 `wg-x daemon`，监听本地 Unix Socket，负责隧道生命周期与统计。
-- Windows
-  - 依赖官方 WireGuard 客户端（`wg.exe`、`wireguard.exe`），程序会在 `PATH` 与常见安装路径中自动查找。
-  - 隧道作为 Windows 服务/后台进程方式管理。
-
-> 注意：不同平台的接口命名规则、权限模型与路由配置方式不同，应用已做适配，但仍需确保系统已安装必要依赖并允许网络接口创建。
-
-
-### 使用指南（核心流程）
-
-- 隧道列表（默认页）
-  - 查看当前隧道、启动/停止、查看详情与每个 Peer 的完整客户端配置（支持复制/另存）
-  - 服务端模式下支持“⚡ 快速添加客户端”（自动生成密钥与地址）与手动添加 Peer
-- Peer 配置生成
-  - 输入本地私钥/公钥、端口、DNS、AllowedIPs、Endpoint 等
-  - 一键生成 WireGuard/Surge/iKuai/MikroTik/OpenWrt 配置；支持导出与二维码
-- 服务器配置
-  - 管理多个上游服务端配置（公钥、预共享密钥、AllowedIPs、Keepalive、接口名、Peer 递增 ID 等）
-- 历史记录
-  - 自动保存配置历史，支持筛选、详情查看、导出 TXT/ZIP、清空
-- WebDAV 同步
-  - 填写服务器地址、用户名/密码，支持启用自动同步与设置同步间隔
-  - 页面与底部状态栏展示“最后同步时间”与同步结果
-
-
-### Linux 守护进程
-
-- 直接以守护进程模式运行
+1. 打开"终端"应用
+2. 执行以下命令（根据应用的实际安装位置调整路径）：
 
 ```bash
-sudo wg-x daemon
+# 如果安装在应用程序文件夹
+sudo xattr -r -d com.apple.quarantine /Applications/WireGuard\ Config\ Generator.app
+
+# 或者如果在其他位置，替换为实际路径
+sudo xattr -r -d com.apple.quarantine /path/to/WireGuard\ Config\ Generator.app
 ```
 
-- 使用随仓库提供的 systemd 单元文件（`wg-x-daemon.service`）
+3. 输入系统密码后，应用即可正常打开
+
+> 💡 **这是什么操作？**
+> `xattr` 命令用于移除 macOS 的隔离属性(quarantine)标记。这个标记会阻止从互联网下载的未签名应用运行。此操作仅移除限制，不会修改应用本身。
+
+## 🚀 快速开始
+
+### 前置要求
+- Node.js 18+
+- Rust 工具链
+- Yarn 包管理器
+
+### 开发
 
 ```bash
-# 安装
-sudo cp wg-x-daemon.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable --now wg-x-daemon
+# 克隆仓库
+git clone https://github.com/pyer/wg-x.git
+cd wg-x
 
-# 管理
-sudo systemctl status wg-x-daemon
-sudo systemctl restart wg-x-daemon
-sudo systemctl stop wg-x-daemon
+# 安装依赖
+yarn install
+
+# 启动开发模式
+yarn tauri dev
 ```
 
-> 应用内（Linux）也提供了安装/卸载/启停守护进程的指令入口，详见 `src-tauri/src/daemon_install.rs` 与 UI 中的 Daemon 面板。
+### 构建
 
+```bash
+yarn tauri build
+```
 
-### 更新与日志
+## 📁 项目结构
 
-- 自动更新：Tauri Updater 使用 GitHub Releases 的 `latest.json` 作为端点（见 `tauri.conf.json`）。
-- 查看版本：应用底部显示当前版本；命令行支持 `wg-x --version`。
-- CLI 帮助：`wg-x --help` 显示可用参数与子命令（Linux 含 `daemon`）。
-- 日志位置：标准输出、应用日志目录与 Webview（通过 `tauri-plugin-log`）。
+```
+wg-x/
+├── src/                    # React 前端代码
+│   ├── pages/             # 页面：隧道管理、配置生成、服务器、历史、WebDAV
+│   └── components/        # UI 组件：通知、对话框、守护进程面板等
+├── src-tauri/             # Rust 后端
+│   ├── src/
+│   │   ├── lib.rs         # 主应用逻辑
+│   │   ├── tunnel.rs      # 隧道管理
+│   │   ├── webdav.rs      # WebDAV 同步
+│   │   └── commands/      # Tauri 命令处理
+│   ├── Cargo.toml         # Rust 依赖
+│   └── tauri.conf.json    # Tauri 配置
+└── package.json           # Node.js 依赖
+```
 
+## 🐧 Linux 守护进程
 
-### 手动验证建议（当前无自动化测试）
+在 Linux 上可以作为系统服务运行在后台。
 
-- 隧道管理
-  - 创建服务端隧道，添加客户端 Peer，启动/停止并观察握手与流量统计
-  - 客户端模式下，连接到已知可用服务端，验证连通性
-- 配置生成
-  - 分别导出 WireGuard/Surge/iKuai/MikroTik/OpenWrt 配置并验证可用性
-- 历史记录与导出
-  - 生成多条历史，按服务端筛选；导出 TXT 与 ZIP，检查内容
-- WebDAV 同步
-  - 开启自动同步、设置间隔；观察“最后同步时间”变化及拉取/推送结果
-- 守护进程（Linux）
-  - 安装 systemd 服务，重启系统后验证自动启动与隧道恢复
+## 🔐 安全性
 
-> 若你计划补充单元测试，请使用 Vitest + React Testing Library，并将测试文件命名为 `*.test.jsx` 且与组件同目录；同时在 `package.json` 增加 `test` 脚本。
+- 密钥生成在本地进行
+- 支持预共享密钥 (PSK) 增强加密
+- 配置文件受操作系统保护
 
+## 🤝 贡献
 
-### 构建与发布要点
+欢迎提交 Issues 和 Pull Requests！
 
-- 桌面构建：`npm run tauri build` 会将前端产物打包到 Tauri 安装包。
-- 外部二进制：`wireguard-go` 通过 `bundle.externalBin` 随应用分发（macOS）；Linux/Windows 依赖系统已安装工具。
-- 版本同步：发布后执行 `npm run version:update` 保持前后端版本一致。
+## 📄 许可证
 
+MIT License - 详见 LICENSE 文件
 
+## 🔗 相关资源
 
+- [WireGuard 官网](https://www.wireguard.com/)
+- [Tauri 文档](https://tauri.app/)
+- [React 文档](https://react.dev/)
 
+## 📞 支持
 
-### 贡献与提交
+如有问题或建议，请在 GitHub 中提交 Issue。
 
-- 提交信息：遵循 Conventional Commits，可选 scope（如 `refactor(TunnelManagementView): …`）。
-- PR 要求：关联 issue，说明影响范围（UI/守护进程），视觉变更附 `screens/` 截图；记录手动测试步骤，并注明是否需要版本提升或服务重启。
-
-
-### 许可证
-
-本仓库未显式声明许可证。如需在其他项目中使用或分发，请先与作者确认。
