@@ -31,6 +31,12 @@ pub fn save_config_to_path(content: String, file_path: String) -> Result<(), Str
 }
 
 #[command]
+pub fn read_file_content(file_path: String) -> Result<String, String> {
+    fs::read_to_string(&file_path)
+        .map_err(|e| format!("读取文件失败: {}", e))
+}
+
+#[command]
 pub fn get_local_ip() -> Result<String, String> {
     // 获取设备的本地局域网 IP 地址
     // 通过创建一个 UDP 连接到公共 DNS 服务器来获取本地 IP

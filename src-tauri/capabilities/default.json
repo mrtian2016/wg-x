@@ -8,6 +8,7 @@
     "cli:default",
     "opener:allow-open-url",
     "opener:allow-default-urls",
+    "dialog:allow-open",
     "dialog:allow-save",
     "dialog:allow-confirm",
     "updater:default",

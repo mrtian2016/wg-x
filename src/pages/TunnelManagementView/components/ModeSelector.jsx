@@ -1,7 +1,7 @@
-function ModeSelector({ onClose, onSelectMode }) {
+function ModeSelector({ onClose, onSelectMode, onImport }) {
   return (
     <div className="modal-overlay">
-      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+      <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '600px' }}>
         <div className="modal-header">
           <h3>选择隧道运行模式</h3>
           <button onClick={onClose} className="btn-close">
@@ -28,6 +28,24 @@ function ModeSelector({ onClose, onSelectMode }) {
               <div className="mode-option-icon">💻</div>
               <div className="mode-option-title">客户端模式</div>
               <div className="mode-option-desc">作为 VPN 客户端，连接到一个服务端</div>
+            </button>
+          </div>
+
+          <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid #eee' }}>
+            <p style={{ marginBottom: '1rem', color: '#666', fontSize: '0.95rem' }}>
+              或者导入现有的配置文件：
+            </p>
+            <button
+              onClick={() => {
+                onClose();
+                onImport();
+              }}
+              className="mode-option-btn"
+              style={{ marginBottom: 0 }}
+            >
+              <div className="mode-option-icon">📥</div>
+              <div className="mode-option-title">导入配置</div>
+              <div className="mode-option-desc">从 WireGuard 配置文件导入，自动检测模式</div>
             </button>
           </div>
         </div>

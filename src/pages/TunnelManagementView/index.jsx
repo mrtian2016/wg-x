@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { save } from '@tauri-apps/plugin-dialog';
+import { save, open } from '@tauri-apps/plugin-dialog';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import DaemonPanel from '../../components/DaemonPanel';
 import { usePeerStatsListener } from '../../hooks/usePeerStatsListener';
@@ -12,6 +12,156 @@ import {
   TunnelCard,
 } from './components';
 import './style.css';
+
+// 解析 WireGuard 配置文件内容
+const parseWireGuardConfig = (content) => {
+  const config = {
+    privateKey: '',
+    address: '',
+    dns: '',
+    mtu: '1420',
+    peers: [],
+  };
+
+  const lines = content.split('\n');
+  let currentSection = null;
+  let currentPeer = null;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    // 跳过空行和注释
+    if (!trimmed || trimmed.startsWith('#')) {
+      continue;
+    }
+
+    // 识别章节
+    if (trimmed === '[Interface]') {
+      currentSection = 'Interface';
+      continue;
+    }
+    if (trimmed === '[Peer]') {
+      currentSection = 'Peer';
+      if (currentPeer) {
+        config.peers.push(currentPeer);
+      }
+      currentPeer = {
+        publicKey: '',
+        presharedKey: '',
+        endpoint: '',
+        address: '',
+        allowedIps: '0.0.0.0/0',
+        persistentKeepalive: 25,
+      };
+      continue;
+    }
+
+    // 解析键值对
+    const [key, ...valueParts] = trimmed.split('=').map(s => s.trim());
+    const value = valueParts.join('=').trim();
+
+    if (currentSection === 'Interface') {
+      switch (key) {
+        case 'PrivateKey':
+          config.privateKey = value;
+          break;
+        case 'Address':
+          config.address = value;
+          break;
+        case 'DNS':
+          config.dns = value;
+          break;
+        case 'MTU':
+          config.mtu = value;
+          break;
+      }
+    } else if (currentSection === 'Peer' && currentPeer) {
+      switch (key) {
+        case 'PublicKey':
+          currentPeer.publicKey = value;
+          break;
+        case 'PresharedKey':
+        case 'PreSharedKey':
+          currentPeer.presharedKey = value;
+          break;
+        case 'Endpoint':
+          currentPeer.endpoint = value;
+          break;
+        case 'AllowedIPs':
+          currentPeer.allowedIps = value;
+          break;
+        case 'PersistentKeepalive':
+          currentPeer.persistentKeepalive = parseInt(value) || 25;
+          break;
+      }
+    }
+  }
+
+  // 添加最后一个 Peer
+  if (currentPeer && currentPeer.publicKey) {
+    config.peers.push(currentPeer);
+  }
+
+  return config;
+};
+
+// 从文件导入 WireGuard 配置
+const handleImportConfig = async (onShowToast, setConfig, setLocalPublicKey, setShowConfigForm) => {
+  try {
+    const filePath = await open({
+      title: '选择 WireGuard 配置文件',
+      filters: [
+        { name: 'WireGuard 配置', extensions: ['conf'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+
+    if (!filePath) {
+      return; // 用户取消
+    }
+
+    // 读取文件内容
+    const content = await invoke('read_file_content', { filePath });
+
+    // 解析配置文件
+    const parsedConfig = parseWireGuardConfig(content);
+
+    if (!parsedConfig.privateKey) {
+      onShowToast('配置文件中未找到 PrivateKey', 'warning');
+      return;
+    }
+
+    // 自动检测模式：如果有多个 Peer 则为服务端，否则为客户端
+    const mode = parsedConfig.peers.length > 1 ? 'server' : 'client';
+
+    // 更新配置
+    setConfig(prevConfig => ({
+      ...prevConfig,
+      privateKey: parsedConfig.privateKey,
+      address: parsedConfig.address || prevConfig.address,
+      dns: parsedConfig.dns || prevConfig.dns,
+      mtu: parsedConfig.mtu || '1420',
+      mode: mode,
+      peers: parsedConfig.peers,
+    }));
+
+    // 计算并显示公钥
+    try {
+      const publicKey = await invoke('private_key_to_public', { privateKey: parsedConfig.privateKey });
+      setLocalPublicKey(publicKey);
+    } catch (err) {
+      console.error('计算公钥失败:', err);
+    }
+
+    // 自动显示配置表单
+    setShowConfigForm(true);
+
+    onShowToast(`配置已导入 (模式: ${mode === 'server' ? '服务端' : '客户端'})`, 'success');
+  } catch (error) {
+    console.error('导入配置失败:', error);
+    onShowToast('导入配置失败: ' + error, 'error');
+  }
+};
 
 // 生成随机局域网地址（10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16）
 const generateLocalAddress = () => {
@@ -912,6 +1062,14 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
           + 新建隧道
         </button>
         <button
+          onClick={() => handleImportConfig(onShowToast, setConfig, setLocalPublicKey, setShowConfigForm)}
+          className="btn-secondary"
+          disabled={loading}
+          title="从 WireGuard 配置文件导入"
+        >
+          📥 导入配置
+        </button>
+        <button
           onClick={loadTunnels}
           className="btn-secondary"
           disabled={loading}
@@ -1408,6 +1566,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
             setShowModeSelector(false);
             setShowConfigForm(true);
           }}
+          onImport={() => handleImportConfig(onShowToast, setConfig, setLocalPublicKey, setShowConfigForm)}
         />
       )}
 
