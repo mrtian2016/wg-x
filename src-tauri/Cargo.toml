@@ -1,6 +1,6 @@
 [package]
 name = "wg-x"
-version = "0.2.3"
+version = "0.2.4"
 description = "WireGuard X - A WireGuard VPN client for macOS, Windows and Linux"
 authors = ["you"]
 edition = "2021"
