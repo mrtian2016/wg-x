@@ -794,7 +794,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
 
       {/* 隧道配置表单模态框 */}
       {showConfigForm && (
-        <div className="modal-overlay" onClick={() => setShowConfigForm(false)}>
+        <div className="modal-overlay">
           <div className="modal-content config-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <h3>{editingConfig ? '编辑隧道配置' : '新建 WireGuard 隧道'}</h3>
@@ -1211,7 +1211,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
 
       {/* 快速添加客户端备注输入对话框 */}
       {showRemarkInput && (
-        <div className="modal-overlay" onClick={() => setShowRemarkInput(false)}>
+        <div className="modal-overlay" >
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
             <div className="modal-header">
               <h3>添加客户端备注</h3>

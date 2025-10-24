@@ -1,6 +1,6 @@
 function ModeSelector({ onClose, onSelectMode }) {
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px' }}>
         <div className="modal-header">
           <h3>选择隧道运行模式</h3>

@@ -26,7 +26,7 @@ function ConfirmDialog({ isOpen, title, message, onConfirm, onCancel }) {
   };
 
   return (
-    <div className={`confirm-overlay ${show ? "show" : ""}`} onClick={handleCancel}>
+    <div className={`confirm-overlay ${show ? "show" : ""}`}>
       <div className={`confirm-dialog ${show ? "show" : ""}`} onClick={(e) => e.stopPropagation()}>
         <div className="confirm-header">
           <h3>{title}</h3>

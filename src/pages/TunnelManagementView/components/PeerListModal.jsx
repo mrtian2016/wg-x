@@ -4,7 +4,7 @@ function PeerListModal({ tunnel, onClose, onViewPeerConfig, formatBytes, formatT
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>Peer 列表 - {tunnel.name}</h3>

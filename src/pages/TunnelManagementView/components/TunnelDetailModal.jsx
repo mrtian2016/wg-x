@@ -4,7 +4,7 @@ function TunnelDetailModal({ tunnel, onClose, formatBytes, formatTime }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>隧道详情</h3>

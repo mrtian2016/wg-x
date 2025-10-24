@@ -21,7 +21,7 @@ function PeerConfigModal({
   const peerTitle = peer?.remark ? `${peer.remark} 的配置` : `Peer ${peerIndex + 1} 配置`;
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay">
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{peerTitle}</h3>

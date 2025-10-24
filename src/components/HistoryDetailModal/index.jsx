@@ -54,7 +54,7 @@ function HistoryDetailModal({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" >
       <div className="modal-content" onClick={(e) => e.stopPropagation()}>
         <div className="modal-header">
           <h3>{history.peer_comment} 配置详情</h3>

@@ -182,7 +182,7 @@ function DaemonPanel({ isOpen, onClose, onShowToast }) {
   if (!isOpen) return null;
 
   return (
-    <div className="daemon-panel-overlay" onClick={onClose}>
+    <div className="daemon-panel-overlay" >
       <div className="daemon-panel-modal" onClick={(e) => e.stopPropagation()}>
         <div className="daemon-panel-header">
           <h3>Linux 守护进程管理</h3>
