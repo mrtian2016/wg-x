@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { save, open } from '@tauri-apps/plugin-dialog';
+import jsQR from 'jsqr';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import DaemonPanel from '../../components/DaemonPanel';
 import { usePeerStatsListener } from '../../hooks/usePeerStatsListener';
@@ -163,6 +164,120 @@ const handleImportConfig = async (onShowToast, setConfig, setLocalPublicKey, set
   }
 };
 
+// 从二维码图像文件导入配置
+const handleImportFromQrcodeImage = async (onShowToast, setConfig, setLocalPublicKey, setShowConfigForm) => {
+  try {
+    // 打开文件选择对话框，只允许选择图像文件
+    const selected = await open({
+      title: '选择包含 WireGuard 配置的二维码图像',
+      multiple: false,
+      filters: [
+        {
+          name: '图像文件',
+          extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp']
+        }
+      ]
+    });
+
+    if (!selected) {
+      return; // 用户取消了选择
+    }
+
+    // 读取图像文件并获取 Base64 编码
+    const base64Content = await invoke('read_file_as_base64', { filePath: selected });
+
+    // 获取文件扩展名以确定正确的 MIME 类型
+    const fileName = selected.toLowerCase();
+    let mimeType = 'image/png';
+    if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
+      mimeType = 'image/jpeg';
+    } else if (fileName.endsWith('.gif')) {
+      mimeType = 'image/gif';
+    } else if (fileName.endsWith('.bmp')) {
+      mimeType = 'image/bmp';
+    } else if (fileName.endsWith('.webp')) {
+      mimeType = 'image/webp';
+    }
+
+    // 构建数据 URL
+    const imageDataUrl = `data:${mimeType};base64,${base64Content}`;
+
+    // 创建 Image 对象来加载二维码图像
+    const img = new Image();
+    img.onload = async () => {
+      try {
+        // 创建 Canvas 并绘制图像
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+
+        // 获取图像数据
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+        // 扫描二维码
+        const qrCodeData = jsQR(imageData.data, imageData.width, imageData.height);
+
+        if (!qrCodeData) {
+          onShowToast('未能识别二维码，请确保图像清晰且包含有效的二维码', 'warning');
+          return;
+        }
+
+        // 解析二维码内容
+        const qrcodeContent = qrCodeData.data;
+        const parsedConfig = parseWireGuardConfig(qrcodeContent);
+
+        if (!parsedConfig.privateKey) {
+          onShowToast('二维码中未找到有效的 PrivateKey', 'warning');
+          return;
+        }
+
+        // 自动检测模式
+        const mode = parsedConfig.peers.length > 1 ? 'server' : 'client';
+
+        // 更新配置
+        setConfig(prevConfig => ({
+          ...prevConfig,
+          privateKey: parsedConfig.privateKey,
+          address: parsedConfig.address || prevConfig.address,
+          dns: parsedConfig.dns || prevConfig.dns,
+          mtu: parsedConfig.mtu || '1420',
+          mode: mode,
+          peers: parsedConfig.peers,
+        }));
+
+        // 计算并显示公钥
+        try {
+          const publicKey = await invoke('private_key_to_public', { privateKey: parsedConfig.privateKey });
+          setLocalPublicKey(publicKey);
+        } catch (err) {
+          console.error('计算公钥失败:', err);
+        }
+
+        onShowToast(`配置已从二维码导入 (模式: ${mode === 'server' ? '服务端' : '客户端'})`, 'success');
+
+        // 打开配置表单
+        if (setShowConfigForm) {
+          setShowConfigForm(true);
+        }
+      } catch (err) {
+        console.error('扫描二维码失败:', err);
+        onShowToast('扫描二维码失败: ' + err.message, 'error');
+      }
+    };
+
+    img.onerror = () => {
+      onShowToast('无法加载图像文件', 'error');
+    };
+
+    img.src = imageDataUrl;
+  } catch (error) {
+    console.error('导入二维码失败:', error);
+    onShowToast('导入二维码失败: ' + error, 'error');
+  }
+};
+
 // 生成随机局域网地址（10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16）
 const generateLocalAddress = () => {
   const privateRanges = [
@@ -310,6 +425,7 @@ function TunnelManagementView({ onShowToast }) {
   // 快速添加客户端备注输入对话框状态
   const [showRemarkInput, setShowRemarkInput] = useState(false);
   const [tempRemark, setTempRemark] = useState('');
+
 
 
   // 检测操作系统和获取本地IP列表
@@ -1137,22 +1253,40 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
               {/* 导入配置按钮 - 仅在客户端模式且未编辑时显示 */}
               {config.mode === 'client' && !editingConfig && (
                 <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #eee' }}>
-                  <button
-                    onClick={() => {
-                      handleImportConfig(
-                        onShowToast,
-                        setConfig,
-                        setLocalPublicKey,
-                        setShowConfigForm
-                      );
-                    }}
-                    className="btn-secondary"
-                    style={{ width: '100%' }}
-                    type="button"
-                    title="从 WireGuard 配置文件导入配置"
-                  >
-                    📥 从配置文件导入
-                  </button>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <button
+                      onClick={() => {
+                        handleImportConfig(
+                          onShowToast,
+                          setConfig,
+                          setLocalPublicKey,
+                          setShowConfigForm
+                        );
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1 }}
+                      type="button"
+                      title="从 WireGuard 配置文件导入配置"
+                    >
+                      文件导入
+                    </button>
+                    <button
+                      onClick={() => {
+                        handleImportFromQrcodeImage(
+                          onShowToast,
+                          setConfig,
+                          setLocalPublicKey,
+                          setShowConfigForm
+                        );
+                      }}
+                      className="btn-secondary"
+                      style={{ flex: 1 }}
+                      type="button"
+                      title="从二维码图像导入配置"
+                    >
+                      二维码导入
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1624,6 +1758,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
           </div>
         </div>
       )}
+
 
 {/* Peer 列表模态框 */}
       {showPeerList && (

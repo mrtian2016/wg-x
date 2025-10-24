@@ -111,6 +111,7 @@ pub fn run() {
             commands::misc_commands::generate_qrcode,
             commands::misc_commands::save_config_to_path,
             commands::misc_commands::read_file_content,
+            commands::misc_commands::read_file_as_base64,
             commands::history_service::save_to_history,
             commands::history_service::get_history_list,
             commands::history_service::get_history_detail,
