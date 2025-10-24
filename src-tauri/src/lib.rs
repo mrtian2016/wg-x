@@ -141,6 +141,8 @@ pub fn run() {
             tunnel::delete_tunnel_config,
             tunnel::get_all_tunnel_configs,
             tunnel::get_tunnel_config,
+            tunnel::start_peer_stats_watcher,
+            tunnel::stop_peer_stats_watcher,
             #[cfg(target_os = "linux")]
             daemon_install::check_daemon_status,
             #[cfg(target_os = "linux")]

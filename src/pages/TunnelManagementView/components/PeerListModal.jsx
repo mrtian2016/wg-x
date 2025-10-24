@@ -1,4 +1,45 @@
+import { useState, useRef, useEffect } from 'react';
+
 function PeerListModal({ tunnel, onClose, onViewPeerConfig, formatBytes, formatTime }) {
+  const modalBodyRef = useRef(null);
+  const scrollPositionRef = useRef(0);
+  const [prevPeerCount, setPrevPeerCount] = useState(0);
+
+  // 保存滚动位置
+  useEffect(() => {
+    const modalBody = modalBodyRef.current;
+    if (!modalBody) return;
+
+    const handleScroll = () => {
+      scrollPositionRef.current = modalBody.scrollTop;
+    };
+
+    modalBody.addEventListener('scroll', handleScroll);
+    return () => modalBody.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 监听 peer 数量变化，如果没有变化则恢复滚动位置
+  useEffect(() => {
+    if (!tunnel?.peers) return;
+
+    const currentPeerCount = tunnel.peers.length;
+
+    // 如果 peer 数量没有变化，恢复之前的滚动位置
+    if (prevPeerCount > 0 && currentPeerCount === prevPeerCount) {
+      const modalBody = modalBodyRef.current;
+      if (modalBody) {
+        // 延迟恢复滚动位置，确保 DOM 已更新
+        requestAnimationFrame(() => {
+          if (scrollPositionRef.current > 0) {
+            modalBody.scrollTop = scrollPositionRef.current;
+          }
+        });
+      }
+    }
+
+    setPrevPeerCount(currentPeerCount);
+  }, [tunnel?.peers, prevPeerCount]);
+
   if (!tunnel) {
     return null;
   }
@@ -12,11 +53,11 @@ function PeerListModal({ tunnel, onClose, onViewPeerConfig, formatBytes, formatT
             ✕
           </button>
         </div>
-        <div className="modal-body">
+        <div className="modal-body" ref={modalBodyRef}>
           {tunnel.peers && tunnel.peers.length > 0 ? (
             <div className="peer-list-container">
               {tunnel.peers.map((peer, index) => (
-                <div key={index} className="peer-list-item">
+                <div key={peer.public_key || index} className="peer-list-item">
                   <div className="peer-list-item-header">
                     <h4>
                       {peer.remark ? `${peer.remark}` : `Peer ${index + 1}`}

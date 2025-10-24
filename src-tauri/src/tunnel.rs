@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use tauri::Manager;
+use tauri::{Manager, Emitter};
 use tokio::sync::Mutex;
 
 #[cfg(target_os = "windows")]
@@ -74,6 +74,8 @@ lazy_static::lazy_static! {
     pub static ref TUNNEL_PROCESSES: Mutex<HashMap<String, ProcessHandle>> = Mutex::new(HashMap::new());
     // 保存隧道的完整配置(包含原始 endpoint 域名),用于定期更新
     pub static ref TUNNEL_CONFIGS: Mutex<HashMap<String, (String, InterfaceConfig)>> = Mutex::new(HashMap::new());
+    // 管理 peer 统计推送线程
+    pub static ref PEER_STATS_WATCHERS: Mutex<HashMap<String, std::thread::JoinHandle<()>>> = Mutex::new(HashMap::new());
 }
 
 // Windows 创建进程标志：CREATE_NO_WINDOW = 0x08000000
@@ -406,6 +408,9 @@ pub struct TunnelStatus {
     // Peer 配置列表
     #[serde(default)]
     pub peers: Vec<TunnelPeerConfig>,
+    // 接口名称（用于 peer 统计推送）
+    #[serde(default)]
+    pub interface_name: String,
 }
 
 // 启动隧道
@@ -833,6 +838,7 @@ pub async fn get_tunnel_details(
         server_endpoint: tunnel_config.server_endpoint.clone(),
         server_allowed_ips: tunnel_config.server_allowed_ips.clone(),
         peers: peers_with_stats,
+        interface_name,
     })
 }
 
@@ -1016,6 +1022,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                                 server_endpoint: tunnel_config.server_endpoint.clone(),
                                 server_allowed_ips: tunnel_config.server_allowed_ips.clone(),
                                 peers: tunnel_config.peers.clone(),
+                                interface_name: interface_name.clone(),
                             };
 
                             tunnels.push(tunnel_status);
@@ -1033,4 +1040,125 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
     tunnels.sort_by(|a, b| b.id.cmp(&a.id));
 
     Ok(tunnels)
+}
+
+// Peer 统计数据推送命令
+#[tauri::command]
+pub fn start_peer_stats_watcher(
+    tunnel_id: String,
+    interface_name: String,
+    app_handle: tauri::AppHandle,
+) {
+    log::info!("启动 peer 统计推送监听器: tunnel_id={}, interface={}", tunnel_id, interface_name);
+
+    let tunnel_id_clone = tunnel_id.clone();
+    let interface_name_clone = interface_name.clone();
+
+    // 检查是否已经有该 tunnel_id 的推送线程在运行
+    if let Ok(watchers) = PEER_STATS_WATCHERS.try_lock() {
+        if watchers.contains_key(&tunnel_id) {
+            log::warn!("该隧道的推送监听器已存在，跳过重复启动");
+            return;
+        }
+    }
+
+    let handle = std::thread::spawn(move || {
+        log::info!("Peer 统计推送线程启动");
+
+        // 创建 tokio 运行时用于异步操作（macOS）
+        let rt = tokio::runtime::Runtime::new().expect("创建 tokio 运行时失败");
+
+        loop {
+            // 每 1 秒推送一次
+            std::thread::sleep(std::time::Duration::from_secs(1));
+
+            // 检查是否应该停止（通过检查 watchers 中是否还存在该 tunnel_id）
+            if let Ok(watchers) = PEER_STATS_WATCHERS.try_lock() {
+                if !watchers.contains_key(&tunnel_id_clone) {
+                    log::info!("Peer 统计推送线程停止");
+                    break;
+                }
+            }
+
+            // 获取 peer 统计信息并推送到所有窗口
+            let peer_stats_json: Option<String> = {
+                #[cfg(target_os = "windows")]
+                {
+                    if let Ok(peer_stats) = crate::tunnel_windows::get_windows_peer_stats(&interface_name_clone) {
+                        serde_json::to_string(&peer_stats).ok()
+                    } else {
+                        log::warn!("获取 Windows peer 统计信息失败");
+                        None
+                    }
+                }
+
+                #[cfg(target_os = "macos")]
+                {
+                    match rt.block_on(crate::tunnel_macos::get_macos_peer_stats(&interface_name_clone)) {
+                        Ok(peer_stats) => {
+                            serde_json::to_string(&peer_stats).ok()
+                        }
+                        Err(e) => {
+                            log::warn!("获取 macOS peer 统计信息失败: {}", e);
+                            None
+                        }
+                    }
+                }
+
+                #[cfg(target_os = "linux")]
+                {
+                    use crate::daemon_ipc::IpcClient;
+                    match IpcClient::get_peer_stats(&tunnel_id_clone) {
+                        Ok(peer_stats_list) => {
+                            // 转换为 HashMap 格式
+                            let mut peer_stats = HashMap::new();
+                            for stat in peer_stats_list {
+                                peer_stats.insert(
+                                    stat.public_key.clone(),
+                                    (stat.tx_bytes, stat.rx_bytes, stat.last_handshake),
+                                );
+                            }
+                            serde_json::to_string(&peer_stats).ok()
+                        }
+                        Err(e) => {
+                            log::warn!("获取 Linux peer 统计信息失败: {}", e);
+                            None
+                        }
+                    }
+                }
+            };
+
+            // 如果成功获取 peer 统计，发送给前端
+            if let Some(peer_stats_json) = peer_stats_json {
+                let windows = app_handle.webview_windows();
+                for (_, window) in windows {
+                    // 发送事件给前端
+                    let payload = serde_json::from_str(&peer_stats_json).unwrap_or(serde_json::json!({}));
+                    if let Err(e) = window.emit("peer-stats-updated", payload) {
+                        log::error!("发出 peer-stats-updated 事件失败: {}", e);
+                    }
+                }
+                log::debug!("发出 peer-stats-updated 事件");
+            }
+        }
+    });
+
+    // 将线程保存到全局状态
+    if let Ok(mut watchers) = PEER_STATS_WATCHERS.try_lock() {
+        watchers.insert(tunnel_id, handle);
+        log::info!("Peer 统计推送线程已注册");
+    }
+}
+
+#[tauri::command]
+pub fn stop_peer_stats_watcher(tunnel_id: String) {
+    log::info!("停止 peer 统计推送监听器: tunnel_id={}", tunnel_id);
+
+    if let Ok(mut watchers) = PEER_STATS_WATCHERS.try_lock() {
+        if watchers.remove(&tunnel_id).is_some() {
+            log::info!("Peer 统计推送线程已移除");
+        } else {
+            log::warn!("未找到对应的推送线程");
+        }
+    }
 }

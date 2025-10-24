@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import PeerQrcodeDisplay from './PeerQrcodeDisplay';
 
 function PeerConfigModal({
@@ -12,6 +12,13 @@ function PeerConfigModal({
   handleSavePeerConfig,
 }) {
   const [activePeerConfigTab, setActivePeerConfigTab] = useState('wireguard');
+
+  // 缓存二维码生成函数，避免频繁重新创建
+  // 注意: 这里不将 tunnel 作为依赖项，因为 generatePeerQrcode 已经是稳定的引用
+  // tunnel 通过 peerIndex 隐式传递给 generateDetailPeerConfig
+  const handleGenerateQrcode = useCallback((index) => {
+    return generatePeerQrcode(index, tunnel);
+  }, [generatePeerQrcode]);
 
   if (peerIndex === null || !tunnel) {
     return null;
@@ -80,7 +87,7 @@ function PeerConfigModal({
           {activePeerConfigTab === 'qrcode' && (
             <PeerQrcodeDisplay
               peerIndex={peerIndex}
-              generateQrcode={(index) => generatePeerQrcode(index, tunnel)}
+              generateQrcode={handleGenerateQrcode}
             />
           )}
 

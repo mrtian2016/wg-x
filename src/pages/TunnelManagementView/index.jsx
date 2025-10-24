@@ -1,8 +1,9 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { save } from '@tauri-apps/plugin-dialog';
 import ConfirmDialog from '../../components/ConfirmDialog';
 import DaemonPanel from '../../components/DaemonPanel';
+import { usePeerStatsListener } from '../../hooks/usePeerStatsListener';
 import {
   PeerConfigModal,
   PeerListModal,
@@ -84,25 +85,25 @@ function TunnelManagementView({ onShowToast }) {
     }
   };
 
-  // 加载隧道列表
+  // 初始加载隧道列表（仅一次）
   useEffect(() => {
     loadTunnels();
-    loadDaemonStatus(); // 同时加载守护进程状态
+  }, []);
 
-    // 每 2 秒刷新一次隧道状态
-    // 但在配置表单打开时暂停轮询,避免 Linux 上的 UI 卡顿
-    const interval = setInterval(() => {
-      if (!showConfigForm) {
-        loadTunnels();
+  // 监听守护进程状态（仅 Linux，5 秒一次）
+  useEffect(() => {
+    if (isLinux) {
+      loadDaemonStatus();
+      const interval = setInterval(() => {
         loadDaemonStatus();
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [showConfigForm, isLinux]);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [isLinux]);
 
   const loadTunnels = async () => {
-    // 防止重复请求(如果正在加载或表单打开,则跳过)
-    if (loading || showConfigForm) {
+    // 防止并发请求
+    if (loading) {
       return;
     }
 
@@ -112,6 +113,7 @@ function TunnelManagementView({ onShowToast }) {
       setTunnels(list);
     } catch (error) {
       console.error('加载隧道列表失败:', error);
+      onShowToast('加载隧道列表失败: ' + error, 'error');
     } finally {
       setLoading(false);
     }
@@ -381,7 +383,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
   };
 
   // 生成 Peer 的二维码
-  const generatePeerQrcode = async (peerIndex, tunnel = null) => {
+  const generatePeerQrcode = useCallback(async (peerIndex, tunnel = null) => {
     try {
       const config = generateDetailPeerConfig(peerIndex, tunnel);
       // 后端已返回完整的 Data URL，直接使用
@@ -391,7 +393,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
       console.error('生成二维码失败:', err);
       return null;
     }
-  };
+  }, []);
 
   // 复制 Peer 配置到剪贴板
   const handleCopyPeerConfig = async (peerIndex, configType = 'wireguard', tunnel = null) => {
@@ -676,6 +678,33 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
     }
   };
 
+  // 处理 peer 统计数据更新
+  const handlePeerStatsUpdate = useCallback((peerStats) => {
+    // 更新 peerListTunnel 中的 peer 流量统计
+    setPeerListTunnel((prev) => {
+      if (!prev || !prev.peers) return prev;
+
+      return {
+        ...prev,
+        peers: prev.peers.map((peer) => {
+          if (peerStats[peer.public_key]) {
+            const [tx, rx, handshake] = peerStats[peer.public_key];
+            return {
+              ...peer,
+              tx_bytes: tx,
+              rx_bytes: rx,
+              last_handshake: handshake,
+            };
+          }
+          return peer;
+        }),
+      };
+    });
+  }, []);
+
+  // 监听 peer 统计更新事件
+  usePeerStatsListener(handlePeerStatsUpdate);
+
   // 查看 Peer 列表
   const handleViewPeerList = async (tunnelId) => {
     try {
@@ -691,8 +720,25 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
       setPeerListTunnel(details);
       setShowPeerList(true);
       setSelectedPeerForConfig(null);
+
+      // 启动后端 peer 统计推送
+      const interfaceName = details.interface_name || `wgx_${tunnelId}`;
+      await invoke('start_peer_stats_watcher', {
+        tunnelId,
+        interfaceName,
+      }).catch((error) => {
+        console.warn('启动 peer 统计推送失败:', error);
+      });
     } catch (error) {
       onShowToast('获取 Peer 列表失败: ' + error, 'error');
+    }
+  };
+
+  // 关闭 Peer 列表时停止推送
+  const handleClosePeerList = () => {
+    setShowPeerList(false);
+    if (peerListTunnel) {
+      invoke('stop_peer_stats_watcher', { tunnelId: peerListTunnel.id }).catch(() => {});
     }
   };
 
@@ -1255,7 +1301,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
       {showPeerList && (
         <PeerListModal
           tunnel={peerListTunnel}
-          onClose={() => setShowPeerList(false)}
+          onClose={handleClosePeerList}
           onViewPeerConfig={(index) => setSelectedPeerForConfig(index)}
           formatBytes={formatBytes}
           formatTime={formatTime}
