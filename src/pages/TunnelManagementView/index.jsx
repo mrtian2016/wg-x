@@ -1062,14 +1062,6 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
           + 新建隧道
         </button>
         <button
-          onClick={() => handleImportConfig(onShowToast, setConfig, setLocalPublicKey, setShowConfigForm)}
-          className="btn-secondary"
-          disabled={loading}
-          title="从 WireGuard 配置文件导入"
-        >
-          📥 导入配置
-        </button>
-        <button
           onClick={loadTunnels}
           className="btn-secondary"
           disabled={loading}
@@ -1142,6 +1134,28 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
               </button>
             </div>
             <div className="modal-body">
+              {/* 导入配置按钮 - 仅在客户端模式且未编辑时显示 */}
+              {config.mode === 'client' && !editingConfig && (
+                <div style={{ marginBottom: '1.5rem', paddingBottom: '1rem', borderBottom: '1px solid #eee' }}>
+                  <button
+                    onClick={() => {
+                      handleImportConfig(
+                        onShowToast,
+                        setConfig,
+                        setLocalPublicKey,
+                        setShowConfigForm
+                      );
+                    }}
+                    className="btn-secondary"
+                    style={{ width: '100%' }}
+                    type="button"
+                    title="从 WireGuard 配置文件导入配置"
+                  >
+                    📥 从配置文件导入
+                  </button>
+                </div>
+              )}
+
               {/* 基本信息 */}
               <div className="config-section">
                 <h4>基本信息</h4>
@@ -1566,7 +1580,6 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
             setShowModeSelector(false);
             setShowConfigForm(true);
           }}
-          onImport={() => handleImportConfig(onShowToast, setConfig, setLocalPublicKey, setShowConfigForm)}
         />
       )}
 
