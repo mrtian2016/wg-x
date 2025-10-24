@@ -94,6 +94,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .invoke_handler(tauri::generate_handler![
             commands::misc_commands::get_platform,
+            commands::misc_commands::get_local_ip,
+            commands::misc_commands::get_all_local_ips,
             commands::key_management::generate_keypair,
             commands::key_management::generate_preshared_key,
             commands::key_management::private_key_to_public,

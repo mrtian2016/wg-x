@@ -57,6 +57,27 @@ const generateAllowedIpsFromAddress = (address) => {
   return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
 };
 
+// 根据本机地址和多个设备本地IP生成 AllowedIPs（格式：x.y.z.0/24, a.b.c.0/24, ...）
+const generateAllowedIpsWithLocalIps = (address, localIps) => {
+  const addressIps = generateAllowedIpsFromAddress(address);
+
+  if (!localIps || localIps.length === 0) return addressIps;
+
+  const networks = new Set([addressIps]); // 使用 Set 去重
+
+  // 为每个本地IP生成网络段
+  localIps.forEach((localIp) => {
+    const parts = localIp.split('.');
+    if (parts.length === 4) {
+      const localIpNetwork = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+      networks.add(localIpNetwork);
+    }
+  });
+
+  // 转换为数组并返回，用逗号分隔
+  return Array.from(networks).join(', ');
+};
+
 // 验证服务端地址格式（IP 或域名）
 const validateServerEndpoint = (endpoint) => {
   if (!endpoint) return false;
@@ -98,6 +119,7 @@ function TunnelManagementView({ onShowToast }) {
   const [editingConfig, setEditingConfig] = useState(null);
   const [localPublicKey, setLocalPublicKey] = useState(''); // 本地公钥
   const [isLinux, setIsLinux] = useState(false); // 是否为 Linux 系统
+  const [allLocalIps, setAllLocalIps] = useState([]); // 所有设备本地IP列表
 
   // 守护进程管理状态 (仅 Linux)
   const [daemonStatus, setDaemonStatus] = useState(null);
@@ -140,14 +162,34 @@ function TunnelManagementView({ onShowToast }) {
   const [tempRemark, setTempRemark] = useState('');
 
 
-  // 检测操作系统
+  // 检测操作系统和获取本地IP列表
   useEffect(() => {
     const checkPlatform = async () => {
       const platformName = await invoke('get_platform');
       console.log('当前操作系统:', platformName);
       setIsLinux(platformName === 'linux');
     };
+
+    const fetchAllLocalIps = async () => {
+      try {
+        const ips = await invoke('get_all_local_ips');
+        console.log('设备所有本地IP:', ips);
+        setAllLocalIps(ips);
+      } catch (error) {
+        console.error('获取本地IP列表失败:', error);
+        // 备用方案：获取单个IP
+        try {
+          const localIp = await invoke('get_local_ip');
+          console.log('设备本地IP（备用）:', localIp);
+          setAllLocalIps([localIp]);
+        } catch (err) {
+          console.error('获取本地IP备用方案失败:', err);
+        }
+      }
+    };
+
     checkPlatform();
+    fetchAllLocalIps();
   }, []);
 
   // 加载守护进程状态 (仅 Linux)
@@ -1091,14 +1133,44 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                     </div>
                     <div className="form-group">
                       <label>AllowedIPs (客户端可访问的网络范围) *</label>
-                      <input
-                        type="text"
-                        value={config.serverAllowedIps || '0.0.0.0/0'}
-                        onChange={(e) => setConfig({ ...config, serverAllowedIps: e.target.value })}
-                        placeholder="例如: 0.0.0.0/0 或 10.0.0.0/24"
-                      />
+                      <div className="input-with-button">
+                        <input
+                          type="text"
+                          value={config.serverAllowedIps || '0.0.0.0/0'}
+                          onChange={(e) => setConfig({ ...config, serverAllowedIps: e.target.value })}
+                          placeholder="例如: 0.0.0.0/0 或 10.0.0.0/24"
+                        />
+                        <button
+                          onClick={() => {
+                            const allowedIps = generateAllowedIpsWithLocalIps(config.address, allLocalIps);
+                            if (allowedIps) {
+                              setConfig({ ...config, serverAllowedIps: allowedIps });
+                            } else {
+                              onShowToast('请先配置本地 IP 地址', 'warning');
+                            }
+                          }}
+                          className="btn-inline"
+                          type="button"
+                          title="根据本地 IP 地址和所有设备局域网 IP 自动生成 AllowedIPs"
+                        >
+                          自动生成
+                        </button>
+                      </div>
                       <small>设置客户端可以通过 VPN 访问的网络范围，0.0.0.0/0 表示全流量代理</small>
                     </div>
+
+                    {/* 设备本地IP信息显示 */}
+                    {allLocalIps.length > 0 && (
+                      <div className="form-group">
+                        <label>设备本地 IP 地址</label>
+                        <div style={{ padding: '0.75rem', backgroundColor: '#f5f5f5', borderRadius: '4px', color: '#666', lineHeight: '1.6' }}>
+                          {allLocalIps.map((ip) => (
+                            <div key={ip}>{ip}</div>
+                          ))}
+                        </div>
+                        <small>这些 IP 地址将被自动包含在 AllowedIPs 中（虚拟网络接口已自动排除）</small>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
