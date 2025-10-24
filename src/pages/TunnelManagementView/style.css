@@ -372,9 +372,7 @@
 
 /* 配置表单样式 */
 .config-section {
-  margin-bottom: 2rem;
-  padding-bottom: 2rem;
-  border-bottom: 1px solid var(--border-color, #e9ecef);
+  margin-bottom: 1rem;
 }
 
 .config-section:last-child {
@@ -787,7 +785,7 @@
   display: inline-block;
   padding: 0.5rem 1rem;
   border-radius: 8px;
-  font-size: 0.95rem;
+  font-size: 0.75rem;
   font-weight: 500;
   width: fit-content;
 }

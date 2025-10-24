@@ -970,7 +970,12 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
         <div className="modal-overlay">
           <div className="modal-content config-modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>{editingConfig ? '编辑隧道配置' : '新建 WireGuard 隧道'}</h3>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <h3>{editingConfig ? '编辑隧道配置' : '新建 WireGuard 隧道'}</h3>
+                <span className="mode-badge" data-mode={config.mode}>
+                  {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '客户端' : '未选择'}
+                </span>
+              </div>
               <button
                 onClick={() => setShowConfigForm(false)}
                 className="btn-close"
@@ -991,27 +996,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                     placeholder="例如: 我的 VPN"
                   />
                 </div>
-                {!editingConfig && (
-                  <div className="form-group">
-                    <label>运行模式 *</label>
-                    <div className="mode-display">
-                      <span className="mode-badge" data-mode={config.mode}>
-                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '客户端' : '未选择'}
-                      </span>
-                      <small>创建后无法修改模式，请谨慎选择</small>
-                    </div>
-                  </div>
-                )}
-                {editingConfig && (
-                  <div className="form-group">
-                    <label>运行模式</label>
-                    <div className="mode-display">
-                      <span className="mode-badge" data-mode={config.mode}>
-                        {config.mode === 'server' ? '服务端' : config.mode === 'client' ? '客户端' : '服务端'}
-                      </span>
-                    </div>
-                  </div>
-                )}
+               
               </div>
 
               {/* Interface 配置 */}
