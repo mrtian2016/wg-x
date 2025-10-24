@@ -13,6 +13,83 @@ import {
 } from './components';
 import './style.css';
 
+// 生成随机局域网地址（10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16）
+const generateLocalAddress = () => {
+  const privateRanges = [
+    { min: 10, max: 10 },           // 10.0.0.0/8
+    { min: 172, max: 172 },         // 172.16.0.0/12
+    { min: 192, max: 192 },         // 192.168.0.0/16
+  ];
+
+  // 随机选择一个私有地址范围
+  const randomRange = privateRanges[Math.floor(Math.random() * privateRanges.length)];
+
+  let secondOctet, thirdOctet;
+
+  if (randomRange.min === 10) {
+    // 10.x.x.1/32 (x 在 0-255)
+    secondOctet = Math.floor(Math.random() * 256);
+    thirdOctet = Math.floor(Math.random() * 256);
+  } else if (randomRange.min === 172) {
+    // 172.16-31.x.1/32
+    secondOctet = 16 + Math.floor(Math.random() * 16);
+    thirdOctet = Math.floor(Math.random() * 256);
+  } else if (randomRange.min === 192) {
+    // 192.168.x.1/32 (x 在 0-255)
+    secondOctet = 168;
+    thirdOctet = Math.floor(Math.random() * 256);
+  }
+
+  return `${randomRange.min}.${secondOctet}.${thirdOctet}.1/32`;
+};
+
+// 根据本机地址生成 AllowedIPs（格式：x.y.z.0/24）
+const generateAllowedIpsFromAddress = (address) => {
+  if (!address) return '';
+
+  // 提取 IP 部分（去除 /32）
+  const ip = address.split('/')[0];
+  const parts = ip.split('.');
+
+  if (parts.length !== 4) return '';
+
+  // 生成 x.y.z.0/24 格式
+  return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+};
+
+// 验证服务端地址格式（IP 或域名）
+const validateServerEndpoint = (endpoint) => {
+  if (!endpoint) return false;
+
+  // IPv4 地址正则
+  const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
+  // 域名正则（支持子域名）
+  const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
+  // IPv6 地址正则（简化版）
+  const ipv6Regex = /^([\da-fA-F]{0,4}:){2,7}[\da-fA-F]{0,4}$/;
+
+  // 检查是否为有效的 IPv4
+  if (ipv4Regex.test(endpoint)) {
+    const parts = endpoint.split('.');
+    return parts.every(part => {
+      const num = parseInt(part, 10);
+      return num >= 0 && num <= 255;
+    });
+  }
+
+  // 检查是否为有效的域名
+  if (domainRegex.test(endpoint)) {
+    return true;
+  }
+
+  // 检查是否为有效的 IPv6
+  if (ipv6Regex.test(endpoint)) {
+    return true;
+  }
+
+  return false;
+};
+
 function TunnelManagementView({ onShowToast }) {
   const [tunnels, setTunnels] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -476,9 +553,17 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
         return;
       }
 
-      // 服务端必须配置公网地址
+      // 服务端必须配置公网地址和监听端口
       if (config.mode === 'server' && !config.serverEndpoint) {
         onShowToast('请输入服务端地址 (公网 IP 或域名)', 'warning');
+        return;
+      }
+      if (config.mode === 'server' && !validateServerEndpoint(config.serverEndpoint)) {
+        onShowToast('服务端地址格式不正确，请输入有效的 IP 地址或域名', 'warning');
+        return;
+      }
+      if (config.mode === 'server' && !config.listenPort) {
+        onShowToast('请输入监听端口', 'warning');
         return;
       }
 
@@ -936,12 +1021,26 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
 
                 <div className="form-group">
                   <label>本地 IP 地址 *</label>
-                  <input
-                    type="text"
-                    value={config.address}
-                    onChange={(e) => setConfig({ ...config, address: e.target.value })}
-                    placeholder="例如: 10.0.0.2/24"
-                  />
+                  <div className="input-with-button">
+                    <input
+                      type="text"
+                      value={config.address}
+                      onChange={(e) => setConfig({ ...config, address: e.target.value })}
+                      placeholder="例如: 10.0.0.2/24"
+                    />
+                    <button
+                      onClick={() => {
+                        const newAddress = generateLocalAddress();
+                        const newAllowedIps = generateAllowedIpsFromAddress(newAddress);
+                        setConfig({ ...config, address: newAddress, serverAllowedIps: newAllowedIps });
+                      }}
+                      className="btn-inline"
+                      type="button"
+                      title="随机生成一个私有局域网地址，同时自动生成 AllowedIPs"
+                    >
+                      生成地址
+                    </button>
+                  </div>
                   <small>格式: IP/子网掩码位数</small>
                 </div>
 
