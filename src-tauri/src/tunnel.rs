@@ -1044,12 +1044,20 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
 // Peer 统计数据推送命令
 #[tauri::command]
-pub fn start_peer_stats_watcher(
+pub async fn start_peer_stats_watcher(
     tunnel_id: String,
     interface_name: String,
     app_handle: tauri::AppHandle,
 ) {
     log::info!("启动 peer 统计推送监听器: tunnel_id={}, interface={}", tunnel_id, interface_name);
+
+    // 检查隧道是否在运行
+    let processes = TUNNEL_PROCESSES.lock().await;
+    if !processes.contains_key(&tunnel_id) {
+        log::warn!("隧道未运行，跳过启动 peer 统计推送监听器: tunnel_id={}", tunnel_id);
+        return;
+    }
+    drop(processes); // 及时释放锁
 
     let tunnel_id_clone = tunnel_id.clone();
     let interface_name_clone = interface_name.clone();
