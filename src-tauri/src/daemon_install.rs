@@ -265,8 +265,8 @@ elif [ -n "$APPIMAGE" ] && [ -r "$APPIMAGE" ]; then
     fi
 else
     log_error "✗ 错误: 无法读取 sidecar 文件"
-    log_error "  直接路径: $SIDECAR_SOURCE (存在: $([ -e "$SIDECAR_SOURCE" ] && echo '是' || echo '否')，可读: $([ -r "$SIDECAR_SOURCE" ] && echo '是' || echo '否'))"
-    log_error "  AppImage: ${APPIMAGE:-未检测到}"
+    log_error "  直接路径: $SIDECAR_SOURCE (存在: $([ -e \"$SIDECAR_SOURCE\" ] && echo '是' || echo '否')，可读: $([ -r \"$SIDECAR_SOURCE\" ] && echo '是' || echo '否'))"
+    log_error "  AppImage: ${{APPIMAGE:-未检测到}}"
     log_error "  请检查文件是否存在和权限是否正确"
     exit 1
 fi
