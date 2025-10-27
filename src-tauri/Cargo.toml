@@ -1,6 +1,6 @@
 [package]
 name = "wire_vault"
-version = "0.2.5"
+version = "0.2.6"
 description = "WireVault - A comprehensive WireGuard VPN management tool for macOS, Windows and Linux"
 authors = ["you"]
 edition = "2021"
