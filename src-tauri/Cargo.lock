@@ -6654,44 +6654,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a751b3277700db47d3e574514de2eced5e54dc8a5436a3bf7a0b248b2cee16f3"
 
 [[package]]
-name = "wg-x"
-version = "0.2.4"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "cocoa",
- "dotenv",
- "futures",
- "hex",
- "image",
- "lazy_static",
- "log",
- "nix 0.27.1",
- "qrcode",
- "quick-xml 0.38.3",
- "rand 0.8.5",
- "regex",
- "reqwest",
- "rtnetlink",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-cli",
- "tauri-plugin-dialog",
- "tauri-plugin-log",
- "tauri-plugin-opener",
- "tauri-plugin-process",
- "tauri-plugin-shell",
- "tauri-plugin-updater",
- "tokio",
- "url",
- "uuid",
- "x25519-dalek",
- "zip 0.6.6",
-]
-
-[[package]]
 name = "winapi"
 version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7162,6 +7124,44 @@ checksum = "cb5a765337c50e9ec252c2069be9bf91c7df47afb103b642ba3a53bf8101be97"
 dependencies = [
  "cfg-if",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "wire_vault"
+version = "0.2.4"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "cocoa",
+ "dotenv",
+ "futures",
+ "hex",
+ "image",
+ "lazy_static",
+ "log",
+ "nix 0.27.1",
+ "qrcode",
+ "quick-xml 0.38.3",
+ "rand 0.8.5",
+ "regex",
+ "reqwest",
+ "rtnetlink",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-cli",
+ "tauri-plugin-dialog",
+ "tauri-plugin-log",
+ "tauri-plugin-opener",
+ "tauri-plugin-process",
+ "tauri-plugin-shell",
+ "tauri-plugin-updater",
+ "tokio",
+ "url",
+ "uuid",
+ "x25519-dalek",
+ "zip 0.6.6",
 ]
 
 [[package]]

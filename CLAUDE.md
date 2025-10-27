@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-这是一个基于 Tauri 2 + React 19 + Vite 7 的桌面应用程序项目，名为 wg-x。
+这是一个基于 Tauri 2 + React 19 + Vite 7 的桌面应用程序项目，名为 wire-vault。
 
 ## 技术栈
 

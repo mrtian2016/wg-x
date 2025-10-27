@@ -26,18 +26,18 @@ fn main() {
     }
 
     // 默认情况：启动 GUI
-    wg_x_lib::run();
+    wire_vault_lib::run();
 }
 
 fn print_help() {
-    println!("WG-X {}", env!("CARGO_PKG_VERSION"));
+    println!("WireVault {}", env!("CARGO_PKG_VERSION"));
     println!("WireGuard 隧道管理工具");
     println!();
     println!("用法:");
-    println!("  wg-x                  启动图形界面 (默认)");
-    println!("  wg-x [选项]");
+    println!("  wire-vault                  启动图形界面 (默认)");
+    println!("  wire-vault [选项]");
     #[cfg(target_os = "linux")]
-    println!("  wg-x [子命令]");
+    println!("  wire-vault [子命令]");
     println!();
     println!("选项:");
     println!("  -h, --help            显示此帮助信息");
@@ -56,7 +56,7 @@ fn run_daemon_mode() {
     tokio::runtime::Runtime::new()
         .expect("无法创建 tokio runtime")
         .block_on(async {
-            if let Err(e) = wg_x_lib::run_daemon().await {
+            if let Err(e) = wire_vault_lib::run_daemon().await {
                 eprintln!("守护进程错误: {}", e);
                 std::process::exit(1);
             }

@@ -30,7 +30,7 @@ struct TunnelProcess {
 
 /// 守护进程主循环
 pub async fn run_daemon() -> Result<(), String> {
-    log::info!("启动 wg-x 守护进程...");
+    log::info!("启动 wire-vault 守护进程...");
 
     // 检查是否以 root 权限运行
     if !nix::unistd::Uid::effective().is_root() {
@@ -187,7 +187,7 @@ async fn start_tunnel_internal(config: TunnelConfigIpc) -> Result<(), String> {
                     系统路径中也未找到: {}\n\
                     \n\
                     解决方案:\n\
-                    1. 将 wireguard-go 复制到 /usr/local/bin/ (或 /opt/wg-x/wireguard-go)\n\
+                    1. 将 wireguard-go 复制到 /usr/local/bin/ (或 /opt/wire-vault/wireguard-go)\n\
                     2. 或安装 wireguard-go 包: sudo apt install wireguard-go",
                     config.wireguard_go_path, e
                 ));
@@ -943,7 +943,7 @@ fn interface_exists(name: &str) -> bool {
 fn find_wireguard_go() -> Result<String, String> {
     // 尝试常见路径（优先级顺序）
     let paths = vec![
-        "/opt/wg-x/wireguard-go", // 安装守护进程时复制的位置（优先使用）
+        "/opt/wire-vault/wireguard-go", // 安装守护进程时复制的位置（优先使用）
         "/usr/local/bin/wireguard-go",
         "/usr/bin/wireguard-go",
         "/opt/wireguard-go/wireguard-go",

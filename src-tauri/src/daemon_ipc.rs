@@ -6,7 +6,7 @@ use std::io::{Read, Write};
 use std::os::unix::net::UnixStream;
 
 // Unix Socket 路径
-pub const DAEMON_SOCKET_PATH: &str = "/var/run/wg-x-daemon.sock";
+pub const DAEMON_SOCKET_PATH: &str = "/var/run/wire-vault-daemon.sock";
 
 // IPC 请求
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -74,7 +74,7 @@ impl IpcClient {
     pub fn send_request(method: &str, params: serde_json::Value) -> Result<IpcResponse, String> {
         // 连接到守护进程
         let mut stream = UnixStream::connect(DAEMON_SOCKET_PATH)
-            .map_err(|e| format!("无法连接到守护进程: {}。请确保守护进程正在运行 (sudo systemctl status wg-x-daemon)", e))?;
+            .map_err(|e| format!("无法连接到守护进程: {}。请确保守护进程正在运行 (sudo systemctl status wire-vault-daemon)", e))?;
 
         // 设置读写超时（30秒，足够启动隧道）
         stream

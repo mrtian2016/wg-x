@@ -8,13 +8,13 @@ use std::process::Command;
 use tauri::Manager;
 
 const SYSTEMD_SERVICE_CONTENT: &str = r#"[Unit]
-Description=WireGuard X 守护进程
-Documentation=https://github.com/your-repo/wg-x
+Description=WireVault 守护进程
+Documentation=https://github.com/pyer/wire-vault
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/wg-x daemon
+ExecStart=/usr/local/bin/wire-vault daemon
 Restart=on-failure
 RestartSec=5s
 
@@ -46,8 +46,8 @@ pub struct DaemonStatus {
 #[tauri::command]
 pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
     // 检查是否安装 (检查可执行文件和 systemd service)
-    let installed = Path::new("/usr/local/bin/wg-x").exists()
-        && Path::new("/etc/systemd/system/wg-x-daemon.service").exists();
+    let installed = Path::new("/usr/local/bin/wire-vault").exists()
+        && Path::new("/etc/systemd/system/wire-vault-daemon.service").exists();
 
     let mut running = false;
     let mut enabled = false;
@@ -55,7 +55,7 @@ pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
     if installed {
         // 检查是否运行
         if let Ok(output) = Command::new("systemctl")
-            .args(["is-active", "wg-x-daemon"])
+            .args(["is-active", "wire-vault-daemon"])
             .output()
         {
             running = output.status.success();
@@ -63,7 +63,7 @@ pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
 
         // 检查是否启用
         if let Ok(output) = Command::new("systemctl")
-            .args(["is-enabled", "wg-x-daemon"])
+            .args(["is-enabled", "wire-vault-daemon"])
             .output()
         {
             enabled = output.status.success();
@@ -72,7 +72,7 @@ pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
 
     // 获取版本
     let version = if installed {
-        if let Ok(output) = Command::new("/usr/local/bin/wg-x")
+        if let Ok(output) = Command::new("/usr/local/bin/wire-vault")
             .arg("--version")
             .output()
         {
@@ -117,25 +117,25 @@ pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
         r#"#!/bin/bash
 set -e
 
-echo "=== WireGuard X 守护进程安装 ==="
+echo "=== WireVault 守护进程安装 ==="
 
-# 1. 创建 /opt/wg-x 目录并复制 wireguard-go
+# 1. 创建 /opt/wire-vault 目录并复制 wireguard-go
 echo "[1/5] 创建目录并复制 wireguard-go..."
-mkdir -p /opt/wg-x
-cp "{}" /opt/wg-x/wireguard-go
-chmod 755 /opt/wg-x/wireguard-go
+mkdir -p /opt/wire-vault
+cp "{}" /opt/wire-vault/wireguard-go
+chmod 755 /opt/wire-vault/wireguard-go
 
 # 2. 复制主可执行文件
 echo "[2/5] 复制可执行文件..."
-cp "{}" /usr/local/bin/wg-x
-chmod 755 /usr/local/bin/wg-x
+cp "{}" /usr/local/bin/wire-vault
+chmod 755 /usr/local/bin/wire-vault
 
 # 3. 创建 systemd service 文件
 echo "[3/5] 创建 systemd service..."
-cat > /etc/systemd/system/wg-x-daemon.service << 'SERVICEEOF'
+cat > /etc/systemd/system/wire-vault-daemon.service << 'SERVICEEOF'
 {}SERVICEEOF
 
-chmod 644 /etc/systemd/system/wg-x-daemon.service
+chmod 644 /etc/systemd/system/wire-vault-daemon.service
 
 # 4. 重新加载 systemd
 echo "[4/5] 重新加载 systemd..."
@@ -143,17 +143,17 @@ systemctl daemon-reload
 
 # 5. 启动并启用守护进程
 echo "[5/5] 启动守护进程..."
-systemctl enable wg-x-daemon
-systemctl start wg-x-daemon
+systemctl enable wire-vault-daemon
+systemctl start wire-vault-daemon
 
 # 验证
 sleep 2
-if systemctl is-active --quiet wg-x-daemon; then
+if systemctl is-active --quiet wire-vault-daemon; then
     echo "✓ 守护进程安装并启动成功!"
     exit 0
 else
     echo "✗ 守护进程启动失败"
-    journalctl -u wg-x-daemon -n 20
+    journalctl -u wire-vault-daemon -n 20
     exit 1
 fi
 "#,
@@ -161,7 +161,7 @@ fi
     );
 
     // 写入临时脚本
-    let script_path = "/tmp/wg-x-install-daemon.sh";
+    let script_path = "/tmp/wire-vault-install-daemon.sh";
     fs::write(script_path, script_content).map_err(|e| format!("创建安装脚本失败: {}", e))?;
 
     // 设置执行权限
@@ -198,16 +198,16 @@ pub async fn uninstall_daemon() -> Result<String, String> {
     let script_content = r#"#!/bin/bash
 set -e
 
-echo "=== WireGuard X 守护进程卸载 ==="
+echo "=== WireVault 守护进程卸载 ==="
 
 # 1. 停止并禁用服务
 echo "[1/5] 停止服务..."
-systemctl stop wg-x-daemon || true
-systemctl disable wg-x-daemon || true
+systemctl stop wire-vault-daemon || true
+systemctl disable wire-vault-daemon || true
 
 # 2. 删除 systemd service 文件
 echo "[2/5] 删除 systemd service..."
-rm -f /etc/systemd/system/wg-x-daemon.service
+rm -f /etc/systemd/system/wire-vault-daemon.service
 
 # 3. 重新加载 systemd
 echo "[3/5] 重新加载 systemd..."
@@ -215,20 +215,20 @@ systemctl daemon-reload
 
 # 4. 删除可执行文件和配置目录
 echo "[4/5] 删除可执行文件..."
-rm -f /usr/local/bin/wg-x
+rm -f /usr/local/bin/wire-vault
 
-# 5. 清理 /opt/wg-x 目录
+# 5. 清理 /opt/wire-vault 目录
 echo "[5/5] 清理配置目录..."
-rm -rf /opt/wg-x
+rm -rf /opt/wire-vault
 
 # 清理 socket 文件
-rm -f /var/run/wg-x-daemon.sock
+rm -f /var/run/wire-vault-daemon.sock
 
 echo "✓ 守护进程已卸载"
 "#;
 
     // 写入临时脚本
-    let script_path = "/tmp/wg-x-uninstall-daemon.sh";
+    let script_path = "/tmp/wire-vault-uninstall-daemon.sh";
     fs::write(script_path, script_content).map_err(|e| format!("创建卸载脚本失败: {}", e))?;
 
     fs::set_permissions(script_path, fs::Permissions::from_mode(0o755))
@@ -296,7 +296,7 @@ pub async fn start_daemon_service() -> Result<(), String> {
     log::debug!("start_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("start", "wg-x-daemon"))
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("start", "wire-vault-daemon"))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("启动服务失败: {}", e))?;
@@ -323,7 +323,7 @@ pub async fn stop_daemon_service() -> Result<(), String> {
     log::debug!("stop_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("stop", "wg-x-daemon"))
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("stop", "wire-vault-daemon"))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("停止服务失败: {}", e))?;
@@ -350,7 +350,7 @@ pub async fn restart_daemon_service() -> Result<(), String> {
     log::debug!("restart_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("restart", "wg-x-daemon"))
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("restart", "wire-vault-daemon"))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("重启服务失败: {}", e))?;
@@ -377,7 +377,7 @@ pub async fn enable_daemon_service() -> Result<(), String> {
     log::debug!("enable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("enable", "wg-x-daemon"))
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("enable", "wire-vault-daemon"))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("启用服务失败: {}", e))?;
@@ -404,7 +404,7 @@ pub async fn disable_daemon_service() -> Result<(), String> {
     log::debug!("disable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
-    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("disable", "wg-x-daemon"))
+    let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("disable", "wire-vault-daemon"))
         .await
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("禁用服务失败: {}", e))?;
@@ -433,7 +433,7 @@ pub async fn get_daemon_logs(lines: Option<usize>) -> Result<String, String> {
     let output = Command::new("journalctl")
         .args([
             "-u",
-            "wg-x-daemon",
+            "wire-vault-daemon",
             "-n",
             &line_count.to_string(),
             "--no-pager",

@@ -1,11 +1,11 @@
 [Unit]
-Description=WireGuard X Daemon
-Documentation=https://github.com/mrtian2016/wg-x
+Description=WireVault Daemon
+Documentation=https://github.com/mrtian2016/wire-vault
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=/usr/local/bin/wg-x daemon
+ExecStart=/usr/local/bin/wire-vault daemon
 Restart=on-failure
 RestartSec=5s
 

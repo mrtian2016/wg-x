@@ -1,10 +1,16 @@
-# WireGuard X (WG-X)
+# WireVault
 
-一个跨平台的 WireGuard VPN 客户端和隧道管理工具，支持 macOS、Windows 和 Linux。提供友好的图形界面和强大的配置管理功能。
+**一个功能完整的跨平台 WireGuard VPN 管理工具，支持多服务器配置、云同步和多格式导出。**
 
 ![Version](https://img.shields.io/badge/version-0.2.3-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+**关键词**: `wireguard` `vpn` `tunnel-management` `tauri` `react` `cross-platform` `config-generator` `webdav-sync` `qr-code`
+
+---
+
+一个跨平台的 WireGuard VPN 客户端和隧道管理工具，支持 macOS、Windows 和 Linux。提供友好的图形界面和强大的配置管理功能。
 
 ## 🌟 主要功能特性
 
@@ -58,7 +64,7 @@
 
 ### Linux 守护进程支持
 - **守护进程模式** - Linux 上支持后台守护进程运行
-- **服务管理** - 安装、卸载、启动、停止 WG-X 系统服务
+- **服务管理** - 安装、卸载、启动、停止 WireVault 系统服务
 - **自启动控制** - 设置守护进程的自启动状态
 - **日志查看** - 查看守护进程的运行日志
 
@@ -70,7 +76,7 @@
 
 ## 📸 应用界面预览
 
-![WireGuard X 隧道管理界面](screens/iShot_2025-10-23_23.44.49.png)
+![WireVault 隧道管理界面](screens/iShot_2025-10-23_23.44.49.png)
 
 *隧道列表管理界面 - 显示多个隧道的配置和状态*
 
@@ -109,14 +115,14 @@
 - **Linux**: 支持 glibc 的 Linux 发行版
 
 ### 下载安装
-从 [Releases](https://github.com/pyer/wg-x/releases) 页面下载对应平台的安装文件：
+从 [Releases](https://github.com/pyer/wire-vault/releases) 页面下载对应平台的安装文件：
 - macOS: `.dmg` 文件
 - Windows: `.msi` 或 `.exe` 文件（需先安装 WireGuard）
 - Linux: `.deb` 或其他发行版对应的安装包
 
 ### ⚠️ macOS 用户注意事项
 
-首次打开应用时，macOS 系统可能会提示 **"WireGuard Config Generator.app"已损坏，无法打开。你应该将它移到废纸篓。**
+首次打开应用时，macOS 系统可能会提示 **"WireVault.app"已损坏，无法打开。你应该将它移到废纸篓。**
 
 这是因为应用未经过 Apple 验证。请按以下步骤解决：
 
@@ -125,10 +131,10 @@
 
 ```bash
 # 如果安装在应用程序文件夹
-sudo xattr -r -d com.apple.quarantine /Applications/WireGuard\ Config\ Generator.app
+sudo xattr -r -d com.apple.quarantine /Applications/WireVault.app
 
 # 或者如果在其他位置，替换为实际路径
-sudo xattr -r -d com.apple.quarantine /path/to/WireGuard\ Config\ Generator.app
+sudo xattr -r -d com.apple.quarantine /path/to/WireVault.app
 ```
 
 3. 输入系统密码后，应用即可正常打开
@@ -147,8 +153,8 @@ sudo xattr -r -d com.apple.quarantine /path/to/WireGuard\ Config\ Generator.app
 
 ```bash
 # 克隆仓库
-git clone https://github.com/pyer/wg-x.git
-cd wg-x
+git clone https://github.com/pyer/wire-vault.git
+cd wire-vault
 
 # 安装依赖
 yarn install
@@ -166,7 +172,7 @@ yarn tauri build
 ## 📁 项目结构
 
 ```
-wg-x/
+wire-vault/
 ├── src/                    # React 前端代码
 │   ├── pages/             # 页面：隧道管理、配置生成、服务器、历史、WebDAV
 │   └── components/        # UI 组件：通知、对话框、守护进程面板等

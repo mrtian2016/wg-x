@@ -49,7 +49,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            log::info!("========== WG-X 应用启动 ==========");
+            log::info!("========== WireVault 应用启动 ==========");
             log::info!("平台: {}", std::env::consts::OS);
             log::info!("应用数据目录: {:?}", app.path().app_data_dir());
             log::info!("应用日志目录: {:?}", app.path().app_log_dir());
@@ -170,7 +170,7 @@ pub fn run() {
         .expect("error while building tauri application")
         .run(|_app_handle, event| {
             if let tauri::RunEvent::Exit = event {
-                log::info!("========== WG-X 应用关闭 ==========");
+                log::info!("========== WireVault 应用关闭 ==========");
                 log::info!("=====================================");
             }
         });

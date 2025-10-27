@@ -24,7 +24,7 @@ pub fn start_wireguard_linux_daemon(
     // 检查守护进程是否运行
     if !IpcClient::is_daemon_running() {
         return Err(
-            "WireGuard 守护进程未运行。请先启动守护进程: sudo systemctl start wg-x-daemon"
+            "WireGuard 守护进程未运行。请先启动守护进程: sudo systemctl start wire-vault-daemon"
                 .to_string(),
         );
     }

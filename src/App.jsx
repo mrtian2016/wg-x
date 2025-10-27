@@ -231,7 +231,7 @@ function App() {
 
       <header>
         <div className="header-content">
-          <h1>🔐 WireGuard X</h1>
+          <h1>🔐 WireVault</h1>
         </div>
       </header>
 
@@ -334,7 +334,7 @@ function App() {
       <footer className="app-footer">
         <div className="footer-content">
           <a
-            href="https://github.com/mrtian2016/wg-x"
+            href="https://github.com/mrtian2016/wire-vault"
             target="_blank"
             rel="noopener noreferrer"
             className="footer-link"
