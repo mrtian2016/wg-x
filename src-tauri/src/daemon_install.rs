@@ -96,99 +96,247 @@ pub async fn check_daemon_status() -> Result<DaemonStatus, String> {
 /// 使用 pkexec 获取权限
 #[tauri::command]
 pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
+    log::info!("========== 开始安装守护进程 ==========");
+
     // 获取当前可执行文件路径
     let current_exe =
-        std::env::current_exe().map_err(|e| format!("获取当前执行文件路径失败: {}", e))?;
+        std::env::current_exe().map_err(|e| {
+            let msg = format!("获取当前执行文件路径失败: {}", e);
+            log::error!("{}", msg);
+            msg
+        })?;
 
-    let current_exe_str = current_exe.to_str().ok_or("无效的可执行文件路径")?;
+    let current_exe_str = current_exe.to_str().ok_or_else(|| {
+        let msg = "无效的可执行文件路径".to_string();
+        log::error!("{}", msg);
+        msg
+    })?;
+
+    log::info!("应用可执行文件: {}", current_exe_str);
 
     // 获取 wireguard-go sidecar 的路径
-    let sidecar_path = app
+    // 优先使用 Resource 目录（生产环境），失败则回退到开发环境路径
+    let sidecar_path = if let Ok(path) = app
         .path()
         .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?;
+    {
+        log::info!("从 Resource 目录找到 sidecar");
+        path
+    } else {
+        log::info!("未找到 Resource 目录中的 sidecar，回退到开发环境路径");
+        // 开发环境回退方案
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .map(|p| p.join("wireguard-go"))
+            .ok_or_else(|| {
+                let msg = "无法获取 wireguard-go 路径".to_string();
+                log::error!("{}", msg);
+                msg
+            })?
+    };
 
     let sidecar_path_str = sidecar_path
         .to_str()
-        .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
+        .ok_or_else(|| {
+            let msg = "无法转换 sidecar 路径".to_string();
+            log::error!("{}", msg);
+            msg
+        })?;
+
+    log::info!("sidecar 路径: {}", sidecar_path_str);
+
+    // 检查文件是否存在和可读
+    if !sidecar_path.exists() {
+        let msg = format!("sidecar 文件不存在: {}", sidecar_path_str);
+        log::error!("{}", msg);
+        return Err(msg);
+    }
+    log::info!("✓ sidecar 文件存在");
+
+    if !std::fs::metadata(&sidecar_path)
+        .map(|m| m.permissions().mode() & 0o111 != 0)
+        .unwrap_or(false)
+    {
+        log::warn!("sidecar 文件可能不可执行，权限: {:o}",
+            std::fs::metadata(&sidecar_path)
+                .map(|m| m.permissions().mode())
+                .unwrap_or(0));
+    } else {
+        log::info!("✓ sidecar 文件可执行");
+    }
 
     // 创建临时安装脚本
     let script_content = format!(
         r#"#!/bin/bash
 set -e
 
-echo "=== WireVault 守护进程安装 ==="
+# 详细日志函数
+log_info() {{
+    echo "[INFO] $1"
+}}
+
+log_error() {{
+    echo "[ERROR] $1" >&2
+}}
+
+log_info "========== WireVault 守护进程安装开始 =========="
+log_info "sidecar 路径: {}"
+log_info "应用路径: {}"
 
 # 1. 创建 /opt/wire-vault 目录并复制 wireguard-go
-echo "[1/5] 创建目录并复制 wireguard-go..."
+log_info "[1/5] 创建目录并复制 wireguard-go..."
 mkdir -p /opt/wire-vault
-cp "{}" /opt/wire-vault/wireguard-go
-chmod 755 /opt/wire-vault/wireguard-go
+log_info "  ✓ 目录 /opt/wire-vault 已创建"
+
+# 详细检查源文件
+if [ -r "{}" ]; then
+    log_info "  ✓ sidecar 文件可读: {}"
+    log_info "  开始复制 wireguard-go..."
+    if install -m 755 "{}" /opt/wire-vault/wireguard-go; then
+        log_info "  ✓ wireguard-go 已复制到 /opt/wire-vault"
+        log_info "  文件权限: $(stat -c '%a' /opt/wire-vault/wireguard-go)"
+    else
+        log_error "  ✗ 复制失败"
+        exit 1
+    fi
+else
+    log_error "✗ 错误: 无法读取 sidecar 文件: {}"
+    log_error "  请检查文件是否存在和权限是否正确"
+    exit 1
+fi
 
 # 2. 复制主可执行文件
-echo "[2/5] 复制可执行文件..."
-cp "{}" /usr/local/bin/wire-vault
-chmod 755 /usr/local/bin/wire-vault
+log_info "[2/5] 复制可执行文件..."
+if install -m 755 "{}" /usr/local/bin/wire-vault; then
+    log_info "  ✓ 应用已复制到 /usr/local/bin/wire-vault"
+    log_info "  文件权限: $(stat -c '%a' /usr/local/bin/wire-vault)"
+else
+    log_error "  ✗ 复制应用文件失败"
+    exit 1
+fi
 
 # 3. 创建 systemd service 文件
-echo "[3/5] 创建 systemd service..."
-cat > /etc/systemd/system/wire-vault-daemon.service << 'SERVICEEOF'
+log_info "[3/5] 创建 systemd service..."
+if cat > /etc/systemd/system/wire-vault-daemon.service << 'SERVICEEOF'
 {}SERVICEEOF
-
-chmod 644 /etc/systemd/system/wire-vault-daemon.service
+then
+    log_info "  ✓ systemd service 文件已创建"
+    chmod 644 /etc/systemd/system/wire-vault-daemon.service
+    log_info "  文件权限: $(stat -c '%a' /etc/systemd/system/wire-vault-daemon.service)"
+else
+    log_error "  ✗ 创建 systemd service 失败"
+    exit 1
+fi
 
 # 4. 重新加载 systemd
-echo "[4/5] 重新加载 systemd..."
-systemctl daemon-reload
+log_info "[4/5] 重新加载 systemd..."
+if systemctl daemon-reload; then
+    log_info "  ✓ systemd 已重新加载"
+else
+    log_error "  ✗ systemd 重新加载失败"
+    exit 1
+fi
 
 # 5. 启动并启用守护进程
-echo "[5/5] 启动守护进程..."
-systemctl enable wire-vault-daemon
-systemctl start wire-vault-daemon
+log_info "[5/5] 启动守护进程..."
+if systemctl enable wire-vault-daemon; then
+    log_info "  ✓ 守护进程已启用"
+else
+    log_error "  ✗ 启用守护进程失败"
+    exit 1
+fi
+
+if systemctl start wire-vault-daemon; then
+    log_info "  ✓ 守护进程已启动"
+else
+    log_error "  ✗ 启动守护进程失败"
+    exit 1
+fi
 
 # 验证
+log_info "验证守护进程状态..."
 sleep 2
+
 if systemctl is-active --quiet wire-vault-daemon; then
-    echo "✓ 守护进程安装并启动成功!"
+    log_info "✓ 守护进程安装并启动成功!"
+    log_info "守护进程状态:"
+    systemctl status wire-vault-daemon --no-pager
     exit 0
 else
-    echo "✗ 守护进程启动失败"
-    journalctl -u wire-vault-daemon -n 20
+    log_error "✗ 守护进程启动失败"
+    log_error "最近 30 条日志:"
+    journalctl -u wire-vault-daemon -n 30 --no-pager || true
+    log_error "systemd 状态:"
+    systemctl status wire-vault-daemon --no-pager || true
     exit 1
 fi
 "#,
-        sidecar_path_str, current_exe_str, SYSTEMD_SERVICE_CONTENT
+        sidecar_path_str, current_exe_str, sidecar_path_str, sidecar_path_str, sidecar_path_str, sidecar_path_str, current_exe_str, SYSTEMD_SERVICE_CONTENT
     );
+
+    log::info!("安装脚本已生成，长度: {} 字节", script_content.len());
 
     // 写入临时脚本
     let script_path = "/tmp/wire-vault-install-daemon.sh";
-    fs::write(script_path, script_content).map_err(|e| format!("创建安装脚本失败: {}", e))?;
+    fs::write(script_path, script_content).map_err(|e| {
+        let msg = format!("创建安装脚本失败: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
+    log::info!("安装脚本已写入: {}", script_path);
 
     // 设置执行权限
     fs::set_permissions(script_path, fs::Permissions::from_mode(0o755))
-        .map_err(|e| format!("设置脚本权限失败: {}", e))?;
+        .map_err(|e| {
+            let msg = format!("设置脚本权限失败: {}", e);
+            log::error!("{}", msg);
+            msg
+        })?;
+    log::info!("脚本权限已设置为 0755");
 
     // 使用 pkexec 执行安装脚本
     log::info!("请求管理员权限以安装守护进程...");
+    log::info!("执行命令: pkexec sh {}", script_path);
 
     let output = Command::new("pkexec")
         .arg("sh")
         .arg(script_path)
         .output()
-        .map_err(|e| format!("执行安装脚本失败: {}。请确保已安装 pkexec (polkit)", e))?;
-
-    // 清理临时脚本
-    let _ = fs::remove_file(script_path);
-
-    if !output.status.success() {
-        let error_msg = String::from_utf8_lossy(&output.stderr);
-        if error_msg.contains("dismissed") || error_msg.contains("canceled") {
-            return Err("用户取消了授权".to_string());
-        }
-        return Err(format!("安装失败: {}", error_msg));
-    }
+        .map_err(|e| {
+            let msg = format!("执行安装脚本失败: {}。请确保已安装 pkexec (polkit)", e);
+            log::error!("{}", msg);
+            msg
+        })?;
 
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    log::info!("脚本执行返回码: {}", output.status.code().unwrap_or(-1));
+    log::info!("脚本 stdout:\n{}", stdout);
+    if !stderr.is_empty() {
+        log::warn!("脚本 stderr:\n{}", stderr);
+    }
+
+    // 清理临时脚本
+    if let Err(e) = fs::remove_file(script_path) {
+        log::warn!("清理临时脚本失败: {}", e);
+    } else {
+        log::info!("临时脚本已清理");
+    }
+
+    if !output.status.success() {
+        if stderr.contains("dismissed") || stderr.contains("canceled") || stderr.contains("Authentication required") {
+            let msg = "用户取消了授权或身份验证失败".to_string();
+            log::warn!("{}", msg);
+            return Err(msg);
+        }
+        let msg = format!("安装失败:\n{}", stderr);
+        log::error!("{}", msg);
+        return Err(msg);
+    }
+
+    log::info!("========== 守护进程安装完成 ==========");
     Ok(stdout.to_string())
 }
 
