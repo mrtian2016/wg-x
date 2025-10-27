@@ -1,5 +1,5 @@
 /* Localized versions of Info.plist keys */
 
-CFBundleName = "WireGuard-X";
-CFBundleDisplayName = "WireGuard-X";
+CFBundleName = "WireVault";
+CFBundleDisplayName = "WireVault";
 NSHumanReadableCopyright = "版权所有 mrtian2016@gmail.com 保留所有权利。";
