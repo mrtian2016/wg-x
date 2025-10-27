@@ -263,37 +263,37 @@ fn run_pkexec_systemctl(
     action: &str,
     service: &str,
 ) -> Result<std::process::Output, std::io::Error> {
-    log::debug!("执行 pkexec systemctl {} {}", action, service);
+    log::info!("执行 pkexec systemctl {} {}", action, service);
 
     let mut cmd = Command::new("pkexec");
     cmd.args(["systemctl", action, service]);
 
     // 确保环境变量传递 (用于图形化认证对话框)
     if let Ok(display) = std::env::var("DISPLAY") {
-        log::debug!("设置 DISPLAY={}", display);
+        log::info!("设置 DISPLAY={}", display);
         cmd.env("DISPLAY", display);
     }
 
     if let Ok(xauth) = std::env::var("XAUTHORITY") {
-        log::debug!("设置 XAUTHORITY={}", xauth);
+        log::info!("设置 XAUTHORITY={}", xauth);
         cmd.env("XAUTHORITY", xauth);
     }
 
     if let Ok(wayland) = std::env::var("WAYLAND_DISPLAY") {
-        log::debug!("设置 WAYLAND_DISPLAY={}", wayland);
+        log::info!("设置 WAYLAND_DISPLAY={}", wayland);
         cmd.env("WAYLAND_DISPLAY", wayland);
     }
 
-    log::debug!("开始执行命令...");
+    log::info!("开始执行命令...");
     let result = cmd.output();
-    log::debug!("命令执行完成");
+    log::info!("命令执行完成");
     result
 }
 
 /// 启动守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn start_daemon_service() -> Result<(), String> {
-    log::debug!("start_daemon_service 被调用");
+    log::info!("start_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
     let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("start", "wire-vault-daemon"))
@@ -301,7 +301,7 @@ pub async fn start_daemon_service() -> Result<(), String> {
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("启动服务失败: {}", e))?;
 
-    log::debug!("命令执行结果: status={:?}", output.status);
+    log::info!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -320,7 +320,7 @@ pub async fn start_daemon_service() -> Result<(), String> {
 /// 停止守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn stop_daemon_service() -> Result<(), String> {
-    log::debug!("stop_daemon_service 被调用");
+    log::info!("stop_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
     let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("stop", "wire-vault-daemon"))
@@ -328,7 +328,7 @@ pub async fn stop_daemon_service() -> Result<(), String> {
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("停止服务失败: {}", e))?;
 
-    log::debug!("命令执行结果: status={:?}", output.status);
+    log::info!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -347,7 +347,7 @@ pub async fn stop_daemon_service() -> Result<(), String> {
 /// 重启守护进程 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn restart_daemon_service() -> Result<(), String> {
-    log::debug!("restart_daemon_service 被调用");
+    log::info!("restart_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
     let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("restart", "wire-vault-daemon"))
@@ -355,7 +355,7 @@ pub async fn restart_daemon_service() -> Result<(), String> {
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("重启服务失败: {}", e))?;
 
-    log::debug!("命令执行结果: status={:?}", output.status);
+    log::info!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -374,7 +374,7 @@ pub async fn restart_daemon_service() -> Result<(), String> {
 /// 启用开机自动启动 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn enable_daemon_service() -> Result<(), String> {
-    log::debug!("enable_daemon_service 被调用");
+    log::info!("enable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
     let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("enable", "wire-vault-daemon"))
@@ -382,7 +382,7 @@ pub async fn enable_daemon_service() -> Result<(), String> {
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("启用服务失败: {}", e))?;
 
-    log::debug!("命令执行结果: status={:?}", output.status);
+    log::info!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);
@@ -401,7 +401,7 @@ pub async fn enable_daemon_service() -> Result<(), String> {
 /// 禁用开机自动启动 (使用 pkexec 请求授权)
 #[tauri::command]
 pub async fn disable_daemon_service() -> Result<(), String> {
-    log::debug!("disable_daemon_service 被调用");
+    log::info!("disable_daemon_service 被调用");
 
     // 使用 spawn_blocking 避免阻塞异步运行时
     let output = tokio::task::spawn_blocking(|| run_pkexec_systemctl("disable", "wire-vault-daemon"))
@@ -409,7 +409,7 @@ pub async fn disable_daemon_service() -> Result<(), String> {
         .map_err(|e| format!("任务执行失败: {}", e))?
         .map_err(|e| format!("禁用服务失败: {}", e))?;
 
-    log::debug!("命令执行结果: status={:?}", output.status);
+    log::info!("命令执行结果: status={:?}", output.status);
 
     if !output.status.success() {
         let error_msg = String::from_utf8_lossy(&output.stderr);

@@ -39,7 +39,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/pyer/wire-vault/releases/latest/download/latest.json"
+        "https://github.com/mrtian2016/wire-vault/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY1NUI3QzY3RTM0RUQwRTAKUldUZzBFN2paM3hiWld1emp5TVhIU3NBbEtveHRSc1oyR2FhTXBETUVsQUY1SDkzQndoRXRnaHAK"
     },

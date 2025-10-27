@@ -86,6 +86,7 @@ pub fn start_wireguard_macos(
         escaped_netmask,
         escaped_interface
     );
+    log::info!("shell 脚本: {}", shell_script);
 
     // 添加路由配置
     // 使用 || true 忽略路由已存在的错误,避免影响 PID 输出
@@ -378,7 +379,7 @@ pub async fn get_macos_peer_stats(
 
     let status_str = get_interface_status(interface_name.to_string()).await?;
 
-    log::debug!("UAPI 响应:\n{}", status_str);
+    log::info!("UAPI 响应:\n{}", status_str);
 
     let peer_stats = crate::tunnel::parse_peer_stats_from_uapi(&status_str);
     log::info!("解析到 {} 个 peer 的统计信息", peer_stats.len());
@@ -538,7 +539,7 @@ pub fn start_endpoint_refresh_task(tunnel_id: String, interface: String) {
 
             if let Some((iface, config)) = config_opt {
                 if iface != interface {
-                    log::debug!("接口名称不匹配,跳过更新");
+                    log::info!("接口名称不匹配,跳过更新");
                     continue;
                 }
 

@@ -456,7 +456,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
     // 生成接口名称
     let interface_name = generate_interface_name(&tunnel_id);
 
-    log::debug!("interface name: {}", interface_name);
+    log::info!("interface name: {}", interface_name);
 
     // 构建 InterfaceConfig
     let listen_port = if tunnel_config.listen_port.is_empty() {
@@ -552,10 +552,47 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
 
     // 获取 sidecar 路径（仅 Unix 平台需要）
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    let sidecar_path = app
-        .path()
-        .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
-        .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?;
+    let sidecar_path = {
+        #[cfg(target_os = "macos")]
+        {
+            // 在 macOS 上，外部二进制文件位于 Contents/MacOS 目录
+            let exe_dir = app
+                .path()
+                .resolve("wireguard-go", tauri::path::BaseDirectory::Executable)
+                .ok()
+                .and_then(|p| p.parent().map(|parent| parent.to_path_buf()));
+
+            if let Some(dir) = exe_dir {
+                // 生产环境：应用打包后，wireguard-go 在 Contents/MacOS 目录
+                dir.join("wireguard-go")
+            } else {
+                // 开发环境：直接在 target/debug 或 target/release 目录
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+                    .map(|p| p.join("wireguard-go"))
+                    .ok_or_else(|| "无法获取 wireguard-go 路径".to_string())?
+            }
+        }
+
+        #[cfg(target_os = "linux")]
+        {
+            // 在 Linux 上，优先使用 Resource 目录（生产环境）
+            // 如果失败，则使用开发环境的 target 目录
+            app
+                .path()
+                .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
+                .or_else(|_| {
+                    // 开发环境回退方案
+                    std::env::current_exe()
+                        .ok()
+                        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+                        .map(|p| p.join("wireguard-go"))
+                        .ok_or_else(|| tauri::Error::NotAllowed)
+                })
+                .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?
+        }
+    };
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     let sidecar_path_str = sidecar_path
@@ -563,7 +600,7 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         .ok_or_else(|| "无法转换 sidecar 路径".to_string())?;
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]
-    log::debug!("wireguard-go 路径: {}", sidecar_path_str);
+    log::info!("wireguard-go 路径: {}", sidecar_path_str);
 
     // 调用平台特定的启动函数
     #[cfg(any(target_os = "macos", target_os = "linux"))]
@@ -727,7 +764,7 @@ pub async fn get_tunnel_details(
                     log::info!("获取到 {} 个 peer 的统计数据", peer_stats.len());
                     for peer in &mut peers {
                         if let Some((tx, rx, handshake)) = peer_stats.get(&peer.public_key) {
-                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                            log::info!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
                                 &peer.public_key[..8], tx, rx, handshake);
                             peer.tx_bytes = *tx;
                             peer.rx_bytes = *rx;
@@ -750,7 +787,7 @@ pub async fn get_tunnel_details(
                     log::info!("获取到 {} 个 peer 的统计数据", peer_stats.len());
                     for peer in &mut peers {
                         if let Some((tx, rx, handshake)) = peer_stats.get(&peer.public_key) {
-                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                            log::info!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
                                 &peer.public_key[..8], tx, rx, handshake);
                             peer.tx_bytes = *tx;
                             peer.rx_bytes = *rx;
@@ -787,7 +824,7 @@ pub async fn get_tunnel_details(
                     // 更新 peers 的统计信息
                     for peer in &mut peers {
                         if let Some((tx, rx, handshake)) = stats_map.get(&peer.public_key) {
-                            log::debug!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
+                            log::info!("Peer {} - tx: {}, rx: {}, handshake: {:?}",
                                 &peer.public_key[..8.min(peer.public_key.len())], tx, rx, handshake);
                             peer.tx_bytes = *tx;
                             peer.rx_bytes = *rx;
@@ -932,10 +969,10 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
 
     let tunnels_dir = app_data_dir.join("tunnels");
 
-    log::debug!("检查隧道目录: {:?}", tunnels_dir);
+    log::info!("检查隧道目录: {:?}", tunnels_dir);
 
     if !tunnels_dir.exists() {
-        log::debug!("隧道目录不存在");
+        log::info!("隧道目录不存在");
         return Ok(Vec::new());
     }
 
@@ -958,7 +995,7 @@ pub async fn get_all_tunnel_configs(app: tauri::AppHandle) -> Result<Vec<TunnelS
                 if let Ok(content) = std::fs::read_to_string(&path) {
                     match serde_json::from_str::<TunnelConfig>(&content) {
                         Ok(tunnel_config) => {
-                            log::debug!(
+                            log::info!(
                                 "解析配置成功: id={}, name={}",
                                 tunnel_config.id,
                                 tunnel_config.name
@@ -1146,7 +1183,7 @@ pub async fn start_peer_stats_watcher(
                         log::error!("发出 peer-stats-updated 事件失败: {}", e);
                     }
                 }
-                log::debug!("发出 peer-stats-updated 事件");
+                log::info!("发出 peer-stats-updated 事件");
             }
         }
     });

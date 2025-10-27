@@ -294,14 +294,14 @@ pub async fn get_tunnel_status_impl(
     tunnel_id: &str,
     _interface_name: &str,
 ) -> (u64, u64, Option<i64>) {
-    log::debug!("通过守护进程获取接口状态...");
+    log::info!("通过守护进程获取接口状态...");
     let tunnel_id = tunnel_id.to_string();
     // 使用 spawn_blocking 避免阻塞异步运行时
     let result = tokio::task::spawn_blocking(move || IpcClient::get_tunnel_status(&tunnel_id)).await;
 
     match result {
         Ok(Ok(status)) => {
-            log::debug!("获取状态成功");
+            log::info!("获取状态成功");
             (status.tx_bytes, status.rx_bytes, status.last_handshake)
         }
         Ok(Err(e)) => {

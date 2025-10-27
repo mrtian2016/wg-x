@@ -378,7 +378,7 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
 
     uapi_config.push_str("\n");
 
-    log::debug!("发送 UAPI 配置:\n{}", uapi_config);
+    log::info!("发送 UAPI 配置:\n{}", uapi_config);
 
     // 设置读取超时
     stream
@@ -417,7 +417,7 @@ async fn configure_interface(config: &TunnelConfigIpc, socket_path: &str) -> Res
         }
     }
 
-    log::debug!("UAPI 响应:\n{}", response);
+    log::info!("UAPI 响应:\n{}", response);
 
     if response.contains("errno=") && !response.contains("errno=0") {
         return Err(format!("配置失败: {}", response));
@@ -551,13 +551,13 @@ async fn handle_get_tunnel_status(request_id: String, params: serde_json::Value)
 
 /// 内部获取隧道状态逻辑
 async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, String> {
-    log::debug!("开始获取隧道 {} 的状态", tunnel_id);
+    log::info!("开始获取隧道 {} 的状态", tunnel_id);
     let socket_path = {
         let tunnels = DAEMON_TUNNELS.lock().await;
-        log::debug!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
+        log::info!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
 
         if let Some(tunnel) = tunnels.get(tunnel_id) {
-            log::debug!("找到隧道，socket 路径: {}", tunnel.socket_path);
+            log::info!("找到隧道，socket 路径: {}", tunnel.socket_path);
             tunnel.socket_path.clone()
         } else {
             log::error!("隧道 {} 未在运行列表中", tunnel_id);
@@ -566,17 +566,17 @@ async fn get_tunnel_status_internal(tunnel_id: &str) -> Result<TunnelStatusIpc, 
     };
 
     // 在阻塞线程池中获取统计信息
-    log::debug!("准备获取接口统计信息...");
+    log::info!("准备获取接口统计信息...");
     let socket_path_clone = socket_path.clone();
     let (tx_bytes, rx_bytes, last_handshake) = tokio::task::spawn_blocking(move || {
-        log::debug!("在阻塞线程中获取统计: {}", socket_path_clone);
+        log::info!("在阻塞线程中获取统计: {}", socket_path_clone);
         get_interface_stats(&socket_path_clone)
     })
     .await
     .map_err(|e| format!("获取统计任务失败: {}", e))?
     .unwrap_or((0, 0, None));
 
-    log::debug!("统计信息: tx={}, rx={}", tx_bytes, rx_bytes);
+    log::info!("统计信息: tx={}, rx={}", tx_bytes, rx_bytes);
 
     // 再次获取接口名称（需要重新锁定）
     let interface_name = {
@@ -630,13 +630,13 @@ async fn handle_get_peer_stats(request_id: String, params: serde_json::Value) ->
 
 /// 内部获取 per-peer 统计信息逻辑
 async fn get_peer_stats_internal(tunnel_id: &str) -> Result<Vec<PeerStatsIpc>, String> {
-    log::debug!("开始获取隧道 {} 的 peer 统计", tunnel_id);
+    log::info!("开始获取隧道 {} 的 peer 统计", tunnel_id);
     let socket_path = {
         let tunnels = DAEMON_TUNNELS.lock().await;
-        log::debug!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
+        log::info!("当前运行中的隧道: {:?}", tunnels.keys().collect::<Vec<_>>());
 
         if let Some(tunnel) = tunnels.get(tunnel_id) {
-            log::debug!("找到隧道，socket 路径: {}", tunnel.socket_path);
+            log::info!("找到隧道，socket 路径: {}", tunnel.socket_path);
             tunnel.socket_path.clone()
         } else {
             log::error!("隧道 {} 未在运行列表中", tunnel_id);
@@ -645,16 +645,16 @@ async fn get_peer_stats_internal(tunnel_id: &str) -> Result<Vec<PeerStatsIpc>, S
     };
 
     // 在阻塞线程池中获取 peer 统计信息
-    log::debug!("准备获取 peer 统计信息...");
+    log::info!("准备获取 peer 统计信息...");
     let socket_path_clone = socket_path.clone();
     let peer_stats = tokio::task::spawn_blocking(move || {
-        log::debug!("在阻塞线程中获取 peer 统计: {}", socket_path_clone);
+        log::info!("在阻塞线程中获取 peer 统计: {}", socket_path_clone);
         get_peer_stats_from_uapi(&socket_path_clone)
     })
     .await
     .map_err(|e| format!("获取统计任务失败: {}", e))??;
 
-    log::debug!("获取到 {} 个 peer 的统计信息", peer_stats.len());
+    log::info!("获取到 {} 个 peer 的统计信息", peer_stats.len());
 
     Ok(peer_stats)
 }
@@ -664,7 +664,7 @@ fn get_peer_stats_from_uapi(socket_path: &str) -> Result<Vec<PeerStatsIpc>, Stri
     use std::io::Read;
     use std::os::unix::net::UnixStream;
 
-    log::debug!("连接到 socket: {}", socket_path);
+    log::info!("连接到 socket: {}", socket_path);
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| format!("连接 socket {} 失败: {}", socket_path, e))?;
 
@@ -673,7 +673,7 @@ fn get_peer_stats_from_uapi(socket_path: &str) -> Result<Vec<PeerStatsIpc>, Stri
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .map_err(|e| format!("设置超时失败: {}", e))?;
 
-    log::debug!("发送 get 命令");
+    log::info!("发送 get 命令");
     stream
         .write_all(b"get=1\n\n")
         .map_err(|e| format!("发送请求失败: {}", e))?;
@@ -682,17 +682,17 @@ fn get_peer_stats_from_uapi(socket_path: &str) -> Result<Vec<PeerStatsIpc>, Stri
     let mut response = String::new();
     let mut buffer = [0u8; 4096];
 
-    log::debug!("开始读取响应");
+    log::info!("开始读取响应");
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
-                log::debug!("EOF");
+                log::info!("EOF");
                 break;
             }
             Ok(n) => {
                 response.push_str(&String::from_utf8_lossy(&buffer[..n]));
                 if response.contains("\n\n") {
-                    log::debug!("检测到双换行符，停止读取");
+                    log::info!("检测到双换行符，停止读取");
                     break;
                 }
             }
@@ -701,7 +701,7 @@ fn get_peer_stats_from_uapi(socket_path: &str) -> Result<Vec<PeerStatsIpc>, Stri
                     || e.kind() == std::io::ErrorKind::TimedOut =>
             {
                 if !response.is_empty() {
-                    log::debug!("超时但已有数据，停止读取");
+                    log::info!("超时但已有数据，停止读取");
                     break;
                 }
                 return Err("读取超时".to_string());
@@ -790,7 +790,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
     use std::io::Read;
     use std::os::unix::net::UnixStream;
 
-    log::debug!("连接到 socket: {}", socket_path);
+    log::info!("连接到 socket: {}", socket_path);
     let mut stream = UnixStream::connect(socket_path)
         .map_err(|e| format!("连接 socket {} 失败: {}", socket_path, e))?;
 
@@ -799,7 +799,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
         .set_read_timeout(Some(std::time::Duration::from_secs(2)))
         .map_err(|e| format!("设置超时失败: {}", e))?;
 
-    log::debug!("发送 get 命令");
+    log::info!("发送 get 命令");
     stream
         .write_all(b"get=1\n\n")
         .map_err(|e| format!("发送请求失败: {}", e))?;
@@ -808,18 +808,18 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
     let mut response = String::new();
     let mut buffer = [0u8; 4096];
 
-    log::debug!("开始读取响应");
+    log::info!("开始读取响应");
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
-                log::debug!("EOF");
+                log::info!("EOF");
                 break;
             }
             Ok(n) => {
                 response.push_str(&String::from_utf8_lossy(&buffer[..n]));
                 // WireGuard UAPI 响应以双换行符结束
                 if response.contains("\n\n") {
-                    log::debug!("检测到双换行符，停止读取");
+                    log::info!("检测到双换行符，停止读取");
                     break;
                 }
             }
@@ -829,7 +829,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
             {
                 // 超时或没有更多数据
                 if !response.is_empty() {
-                    log::debug!("超时但已有数据，停止读取");
+                    log::info!("超时但已有数据，停止读取");
                     break;
                 }
                 return Err("读取超时".to_string());
@@ -838,7 +838,7 @@ fn get_interface_stats(socket_path: &str) -> Result<(u64, u64, Option<i64>), Str
         }
     }
 
-    log::debug!("读取到的响应长度: {}", response.len());
+    log::info!("读取到的响应长度: {}", response.len());
 
     let mut tx_bytes = 0u64;
     let mut rx_bytes = 0u64;

@@ -452,7 +452,7 @@ pub fn get_windows_peer_stats(interface: &str) -> Result<std::collections::HashM
     }
 
     let stdout = String::from_utf8_lossy(&output.stdout);
-    log::debug!("接口 dump 输出:\n{}", stdout);
+    log::info!("接口 dump 输出:\n{}", stdout);
 
     let peer_stats = parse_windows_dump_per_peer(&stdout);
     log::info!("解析到 {} 个 peer 的统计信息", peer_stats.len());
