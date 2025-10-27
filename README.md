@@ -1,16 +1,11 @@
 # WireVault
 
-**一个功能完整的跨平台 WireGuard VPN 管理工具，支持多服务器配置、云同步和多格式导出。**
+**一个跨平台的 WireGuard VPN 客户端和隧道管理工具，支持 macOS、Windows 和 Linux。提供友好的图形界面和强大的配置管理功能。**
 
 ![Version](https://img.shields.io/badge/version-0.2.3-blue)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-**关键词**: `wireguard` `vpn` `tunnel-management` `tauri` `react` `cross-platform` `config-generator` `webdav-sync` `qr-code`
-
----
-
-一个跨平台的 WireGuard VPN 客户端和隧道管理工具，支持 macOS、Windows 和 Linux。提供友好的图形界面和强大的配置管理功能。
 
 ## 🌟 主要功能特性
 
@@ -76,9 +71,11 @@
 
 ## 📸 应用界面预览
 
-![WireVault 隧道管理界面](screens/iShot_2025-10-23_23.44.49.png)
-
+![WireVault 隧道管理界面](screens/iShot_2025-10-27_11.49.01.png)
 *隧道列表管理界面 - 显示多个隧道的配置和状态*
+
+![WireVault 添加隧道界面](screens/iShot_2025-10-27_11.46.24.png)
+*添加隧道界面 - 创建新的 WireGuard 隧道配置*
 
 ## 🛠️ 技术栈
 
