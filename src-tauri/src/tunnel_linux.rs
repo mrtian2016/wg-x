@@ -79,15 +79,30 @@ pub fn start_wireguard_linux_legacy(
     let escaped_wg_path = wg_path.replace('\'', "'\\''");
     let escaped_interface = interface.replace('\'', "'\\''");
     let escaped_user = user.replace('\'', "'\\''");
-    let escaped_address = address.replace('\'', "'\\''");
+
+    // 支持逗号分隔的多个地址（IPv4 和 IPv6 双栈）
+    let addresses: Vec<&str> = address.split(',').map(|s| s.trim()).collect();
 
     // Linux 方案:以 root 运行 wireguard-go,然后手动修改 socket 目录权限
-    // 关键:在 wireguard-go 启动前就设置好目录权限
     let mut shell_script = format!(
-        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 2 && /sbin/ip address add '{}' dev '{}' && /sbin/ip link set '{}' up",
-        escaped_wg_path, escaped_interface,
-        escaped_address, escaped_interface, escaped_interface
+        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 2",
+        escaped_wg_path, escaped_interface
     );
+
+    // 配置每个 IP 地址
+    for addr in addresses {
+        if addr.is_empty() {
+            continue;
+        }
+        let escaped_addr = addr.replace('\'', "'\\''");
+        shell_script.push_str(&format!(
+            " && /sbin/ip address add '{}' dev '{}'",
+            escaped_addr, escaped_interface
+        ));
+    }
+
+    // 启动接口
+    shell_script.push_str(&format!(" && /sbin/ip link set '{}' up", escaped_interface));
 
     // 添加路由
     for route in routes {

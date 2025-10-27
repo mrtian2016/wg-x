@@ -278,8 +278,18 @@ const handleImportFromQrcodeImage = async (onShowToast, setConfig, setLocalPubli
   }
 };
 
-// 生成随机局域网地址（10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16）
-const generateLocalAddress = () => {
+// 生成随机局域网地址（支持 IPv4 和 IPv6）
+const generateLocalAddress = (ipVersion = 'v4') => {
+  if (ipVersion === 'v6') {
+    // 生成 IPv6 ULA (Unique Local Address) - fd00::/8
+    // 格式: fdXX:XXXX:XXXX:XXXX::1/128
+    const randomHex = () => Math.floor(Math.random() * 65536).toString(16).padStart(4, '0');
+    // fd 后面需要跟两位十六进制数
+    const fdSuffix = Math.floor(Math.random() * 256).toString(16).padStart(2, '0');
+    return `fd${fdSuffix}:${randomHex()}:${randomHex()}:${randomHex()}::1/128`;
+  }
+
+  // IPv4 私有地址
   const privateRanges = [
     { min: 10, max: 10 },           // 10.0.0.0/8
     { min: 172, max: 172 },         // 172.16.0.0/12
@@ -308,39 +318,99 @@ const generateLocalAddress = () => {
   return `${randomRange.min}.${secondOctet}.${thirdOctet}.1/32`;
 };
 
-// 根据本机地址生成 AllowedIPs（格式：x.y.z.0/24）
+// 根据本机地址生成 AllowedIPs（支持 IPv4 和 IPv6）
 const generateAllowedIpsFromAddress = (address) => {
   if (!address) return '';
 
-  // 提取 IP 部分（去除 /32）
+  // 提取 IP 部分（去除子网掩码）
   const ip = address.split('/')[0];
+
+  // 检测是否为 IPv6（包含冒号）
+  if (ip.includes(':')) {
+    // IPv6: 提取前 64 位作为网络前缀
+    // 例如: fd12:3456:789a:bcde::1 -> fd12:3456:789a:bcde::/64
+    if (ip.includes('::')) {
+      // 压缩格式处理
+      const [prefix] = ip.split('::');
+      const parts = prefix.split(':').filter(p => p !== '');
+      if (parts.length >= 4) {
+        return `${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}::/64`;
+      } else if (parts.length > 0) {
+        // 如果前缀不足 4 段，补齐到 4 段
+        while (parts.length < 4) {
+          parts.push('0000');
+        }
+        return `${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}::/64`;
+      }
+    } else {
+      // 完整格式处理
+      const parts = ip.split(':');
+      if (parts.length >= 4) {
+        return `${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}::/64`;
+      }
+    }
+    return '';
+  }
+
+  // IPv4: 生成 x.y.z.0/24 格式
   const parts = ip.split('.');
-
   if (parts.length !== 4) return '';
-
-  // 生成 x.y.z.0/24 格式
   return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
 };
 
-// 根据本机地址和多个设备本地IP生成 AllowedIPs（格式：x.y.z.0/24, a.b.c.0/24, ...）
+// 根据本机地址和多个设备本地IP生成 AllowedIPs（支持 IPv4 和 IPv6 双栈）
 const generateAllowedIpsWithLocalIps = (address, localIps) => {
-  const addressIps = generateAllowedIpsFromAddress(address);
+  const networks = new Set(); // 使用 Set 去重
 
-  if (!localIps || localIps.length === 0) return addressIps;
-
-  const networks = new Set([addressIps]); // 使用 Set 去重
+  // 处理本机地址（可能包含多个地址，用逗号分隔）
+  if (address) {
+    const addresses = address.split(',').map(addr => addr.trim());
+    addresses.forEach(addr => {
+      const network = generateAllowedIpsFromAddress(addr);
+      if (network) {
+        // 如果返回的是多个网段（逗号分隔），需要分别添加
+        network.split(',').forEach(n => networks.add(n.trim()));
+      }
+    });
+  }
 
   // 为每个本地IP生成网络段
-  localIps.forEach((localIp) => {
-    const parts = localIp.split('.');
-    if (parts.length === 4) {
-      const localIpNetwork = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
-      networks.add(localIpNetwork);
-    }
-  });
+  if (localIps && localIps.length > 0) {
+    localIps.forEach((localIp) => {
+      // IPv6 地址
+      if (localIp.includes(':')) {
+        const parts = localIp.split(':');
+        if (parts.length >= 4) {
+          const localIpNetwork = `${parts[0]}:${parts[1]}:${parts[2]}:${parts[3]}::/64`;
+          networks.add(localIpNetwork);
+        }
+      } else {
+        // IPv4 地址
+        const parts = localIp.split('.');
+        if (parts.length === 4) {
+          const localIpNetwork = `${parts[0]}.${parts[1]}.${parts[2]}.0/24`;
+          networks.add(localIpNetwork);
+        }
+      }
+    });
+  }
 
   // 转换为数组并返回，用逗号分隔
   return Array.from(networks).join(', ');
+};
+
+// 格式化 Endpoint（IPv6 地址需要加方括号）
+const formatEndpoint = (host, port) => {
+  if (!host) return '';
+
+  // 检查是否为 IPv6 地址（包含冒号且不包含方括号）
+  if (host.includes(':') && !host.startsWith('[')) {
+    // IPv6 地址需要用方括号括起来
+    return port ? `[${host}]:${port}` : `[${host}]`;
+  }
+
+  // IPv4 或域名
+  return port ? `${host}:${port}` : host;
 };
 
 // 验证服务端地址格式（IP 或域名）
@@ -351,8 +421,16 @@ const validateServerEndpoint = (endpoint) => {
   const ipv4Regex = /^(\d{1,3}\.){3}\d{1,3}$/;
   // 域名正则（支持子域名）
   const domainRegex = /^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$/;
-  // IPv6 地址正则（简化版）
-  const ipv6Regex = /^([\da-fA-F]{0,4}:){2,7}[\da-fA-F]{0,4}$/;
+  // IPv6 地址正则（完整版，支持各种压缩格式）
+  const ipv6Regex = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{0,4}){0,4}%[0-9a-zA-Z]{1,}|::(ffff(:0{1,4}){0,1}:){0,1}((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])|([0-9a-fA-F]{1,4}:){1,4}:((25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9])\.){3}(25[0-5]|(2[0-4]|1{0,1}[0-9]){0,1}[0-9]))$/;
+  // IPv6 带方括号格式（用于 URL）
+  const ipv6BracketRegex = /^\[([^\]]+)\]$/;
+
+  // 检查是否为带方括号的 IPv6
+  const bracketMatch = endpoint.match(ipv6BracketRegex);
+  if (bracketMatch) {
+    return ipv6Regex.test(bracketMatch[1]);
+  }
 
   // 检查是否为有效的 IPv4
   if (ipv4Regex.test(endpoint)) {
@@ -411,7 +489,7 @@ function TunnelManagementView({ onShowToast }) {
     privateKey: '',
     address: '',
     listenPort: '',
-    dns: '',
+    dns: '223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1',
     mtu: '1420',
     serverEndpoint: '', // 服务端的公网 IP 或域名（仅服务端）
     serverAllowedIps: '0.0.0.0/0', // 服务端允许客户端访问的网络范围（仅服务端）
@@ -608,13 +686,44 @@ function TunnelManagementView({ onShowToast }) {
       // 生成预共享密钥
       const psk = await invoke('generate_preshared_key');
 
-      // 自动生成客户端 IP（基于当前地址段）
+      // 自动生成客户端 IP（支持 IPv4 和 IPv6 双栈）
       let clientIp = '10.0.0.2/32'; // 默认值
       if (config.address) {
-        const parts = config.address.split('/');
-        const baseIp = parts[0].split('.');
-        const lastOctet = parseInt(baseIp[3]) + config.peers.length + 1;
-        clientIp = `${baseIp[0]}.${baseIp[1]}.${baseIp[2]}.${lastOctet}/32`;
+        // 处理可能包含多个地址的情况（逗号分隔）
+        const addresses = config.address.split(',').map(addr => addr.trim());
+        const clientAddresses = [];
+
+        addresses.forEach(addr => {
+          const [ip, mask] = addr.split('/');
+
+          // 检测是 IPv6 还是 IPv4
+          if (ip.includes(':')) {
+            // IPv6 地址处理
+            // 处理压缩格式的 IPv6 地址，例如 fd12:3456:789a:bcde::1
+            // 需要找到 :: 后面的数字部分
+            if (ip.includes('::')) {
+              // 压缩格式，例如: fd12:3456:789a:bcde::1
+              const [prefix, suffix] = ip.split('::');
+              const lastNum = suffix || '1';
+              const newLastNum = parseInt(lastNum, 16) + config.peers.length + 1;
+              clientAddresses.push(`${prefix}::${newLastNum.toString(16)}/128`);
+            } else {
+              // 完整格式，例如: fd12:3456:789a:bcde:0000:0000:0000:0001
+              const parts = ip.split(':');
+              const lastPart = parts[parts.length - 1];
+              const newLastPart = (parseInt(lastPart, 16) + config.peers.length + 1).toString(16);
+              parts[parts.length - 1] = newLastPart;
+              clientAddresses.push(`${parts.join(':')}/128`);
+            }
+          } else {
+            // IPv4 地址处理
+            const parts = ip.split('.');
+            const lastOctet = parseInt(parts[3]) + config.peers.length + 1;
+            clientAddresses.push(`${parts[0]}.${parts[1]}.${parts[2]}.${lastOctet}/32`);
+          }
+        });
+
+        clientIp = clientAddresses.join(', ');
       }
 
       // 添加新 Peer（包含客户端的临时私钥）
@@ -623,7 +732,7 @@ function TunnelManagementView({ onShowToast }) {
         clientPrivateKey: clientKeypair.private_key, // 保存客户端私钥，用于生成完整配置
         presharedKey: psk,
         endpoint: '', // 服务端模式下不需要 endpoint
-        address: clientIp, // 客户端的 VPN IP 地址
+        address: clientIp, // 客户端的 VPN IP 地址（可能包含双栈）
         allowedIps: clientIp, // 服务端模式下，这里应该是客户端的 VPN IP，这样服务端才能路由到客户端
         persistentKeepalive: 0, // 服务端默认为 0，不需要保持连接
         remark: tempRemark.trim(), // 备注信息
@@ -651,9 +760,8 @@ function TunnelManagementView({ onShowToast }) {
     // 获取服务端的 Endpoint
     let serverEndpoint = '服务端地址未配置';
     if (config.serverEndpoint) {
-      serverEndpoint = config.listenPort ?
-        `${config.serverEndpoint}:${config.listenPort}` :
-        `${config.serverEndpoint}:51820`;
+      const port = config.listenPort || '51820';
+      serverEndpoint = formatEndpoint(config.serverEndpoint, port);
     } else {
       serverEndpoint = config.listenPort ?
         `<服务器IP或域名>:${config.listenPort}` :
@@ -670,7 +778,7 @@ function TunnelManagementView({ onShowToast }) {
     const clientConfig = `[Interface]
 PrivateKey = ${clientPrivateKey}
 Address = ${peer.address || peer.allowedIps}
-${config.dns ? `DNS = ${config.dns}` : 'DNS = 8.8.8.8, 8.8.4.4'}
+${config.dns ? `DNS = ${config.dns}` : 'DNS = 223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1'}
 ${config.mtu ? `MTU = ${config.mtu}` : 'MTU = 1420'}
 
 [Peer]
@@ -698,9 +806,8 @@ PersistentKeepalive = 25`;
     // 获取服务端的 Endpoint
     let serverEndpoint = '服务端地址未配置';
     if (targetTunnel.server_endpoint) {
-      serverEndpoint = targetTunnel.listen_port ?
-        `${targetTunnel.server_endpoint}:${targetTunnel.listen_port}` :
-        `${targetTunnel.server_endpoint}:51820`;
+      const port = targetTunnel.listen_port || '51820';
+      serverEndpoint = formatEndpoint(targetTunnel.server_endpoint, port);
     } else {
       serverEndpoint = targetTunnel.listen_port ?
         `<服务器IP或域名>:${targetTunnel.listen_port}` :
@@ -710,6 +817,8 @@ PersistentKeepalive = 25`;
     const serverAllowedIps = targetTunnel.server_allowed_ips || '0.0.0.0/0';
     const clientPrivateKey = peer.client_private_key || '<客户端私钥>';
     const clientAddress = peer.address || '<客户端IP地址>';
+    const dnsServers = targetTunnel.dns || '223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1';
+    const mtu = targetTunnel.mtu || '1420';
 
     // 调试:打印 peer 对象看看 preshared_key 的值
     console.log('生成客户端配置 - peer 对象:', peer);
@@ -718,8 +827,8 @@ PersistentKeepalive = 25`;
     const clientConfig = `[Interface]
 PrivateKey = ${clientPrivateKey}
 Address = ${clientAddress}
-DNS = 8.8.8.8, 8.8.4.4
-MTU = 1420
+DNS = ${dnsServers}
+MTU = ${mtu}
 
 [Peer]
 PublicKey = ${targetTunnel.public_key || '<服务端公钥>'}
@@ -746,9 +855,8 @@ PersistentKeepalive = 25`;
     // 获取服务端的 Endpoint
     let serverEndpoint = '';
     if (targetTunnel.server_endpoint) {
-      serverEndpoint = targetTunnel.listen_port ?
-        `${targetTunnel.server_endpoint}:${targetTunnel.listen_port}` :
-        `${targetTunnel.server_endpoint}:51820`;
+      const port = targetTunnel.listen_port || '51820';
+      serverEndpoint = formatEndpoint(targetTunnel.server_endpoint, port);
     } else {
       return '服务端地址未配置';
     }
@@ -757,6 +865,8 @@ PersistentKeepalive = 25`;
     const clientPrivateKey = peer.client_private_key || '';
     const tunnelName = targetTunnel.name || 'wireguard';
     const clientAddress = peer.address || '';
+    const dnsServers = targetTunnel.dns || '223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1';
+    const mtu = targetTunnel.mtu || '1420';
 
     if (!clientPrivateKey) {
       return '客户端私钥未生成';
@@ -772,8 +882,8 @@ wireguard-${tunnelName.replace(/\\s+/g, '')} = wireguard, section-name = WireGua
 [WireGuard-${tunnelName.replace(/\\s+/g, '')}]
 private-key = ${clientPrivateKey}
 self-ip = ${clientAddress.split('/')[0]}
-dns-server = 8.8.8.8, 8.8.4.4
-mtu = 1420
+dns-server = ${dnsServers}
+mtu = ${mtu}
 peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAllowedIps}, endpoint = ${serverEndpoint}${peer.preshared_key ? `, pre-shared-key = ${peer.preshared_key}` : ''})`;
 
     return surgeConfig;
@@ -966,7 +1076,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
       privateKey: '',
       address: '',
       listenPort: '',
-      dns: '',
+      dns: '223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1',
       mtu: '1420',
       serverEndpoint: '', // 重置服务端公网地址
       serverAllowedIps: '0.0.0.0/0', // 重置服务端 AllowedIPs
@@ -1378,22 +1488,52 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                       type="text"
                       value={config.address}
                       onChange={(e) => setConfig({ ...config, address: e.target.value })}
-                      placeholder="例如: 10.0.0.2/24"
+                      placeholder="例如: 10.0.0.2/24, fd12:3456:789a:bcde::1/128"
                     />
                     <button
                       onClick={() => {
-                        const newAddress = generateLocalAddress();
+                        const ipv4Address = generateLocalAddress('v4');
+                        const ipv6Address = generateLocalAddress('v6');
+                        const newAddress = `${ipv4Address}, ${ipv6Address}`;
+                        const ipv4AllowedIps = generateAllowedIpsFromAddress(ipv4Address);
+                        const ipv6AllowedIps = generateAllowedIpsFromAddress(ipv6Address);
+                        const newAllowedIps = `${ipv4AllowedIps}, ${ipv6AllowedIps}`;
+                        setConfig({ ...config, address: newAddress, serverAllowedIps: newAllowedIps });
+                      }}
+                      className="btn-inline"
+                      type="button"
+                      title="同时生成 IPv4 和 IPv6 双栈地址"
+                    >
+                      生成双栈地址
+                    </button>
+                    <button
+                      onClick={() => {
+                        const newAddress = generateLocalAddress('v4');
                         const newAllowedIps = generateAllowedIpsFromAddress(newAddress);
                         setConfig({ ...config, address: newAddress, serverAllowedIps: newAllowedIps });
                       }}
                       className="btn-inline"
                       type="button"
-                      title="随机生成一个私有局域网地址，同时自动生成 AllowedIPs"
+                      title="仅生成 IPv4 私有地址"
+                      style={{ marginLeft: '0.5rem' }}
                     >
-                      生成地址
+                      仅 IPv4
+                    </button>
+                    <button
+                      onClick={() => {
+                        const newAddress = generateLocalAddress('v6');
+                        const newAllowedIps = generateAllowedIpsFromAddress(newAddress);
+                        setConfig({ ...config, address: newAddress, serverAllowedIps: newAllowedIps });
+                      }}
+                      className="btn-inline"
+                      type="button"
+                      title="仅生成 IPv6 ULA 地址"
+                      style={{ marginLeft: '0.5rem' }}
+                    >
+                      仅 IPv6
                     </button>
                   </div>
-                  <small>格式: IP/子网掩码位数</small>
+                  <small>格式: IP/子网掩码位数 (支持 IPv4 和 IPv6 双栈，多个地址用逗号分隔)</small>
                 </div>
 
                 <div className="form-row">
@@ -1436,9 +1576,9 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                     type="text"
                     value={config.dns}
                     onChange={(e) => setConfig({ ...config, dns: e.target.value })}
-                    placeholder="例如: 1.1.1.1, 8.8.8.8"
+                    placeholder="例如: 223.5.5.5, 223.6.6.6, 2400:3200::1, 2400:3200:baba::1"
                   />
-                  <small>多个 DNS 用逗号分隔</small>
+                  <small>多个 DNS 用逗号分隔（支持 IPv4 和 IPv6）</small>
                 </div>
 
                 {/* 服务端特定的配置 */}
@@ -1470,7 +1610,7 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                           type="text"
                           value={config.serverAllowedIps || '0.0.0.0/0'}
                           onChange={(e) => setConfig({ ...config, serverAllowedIps: e.target.value })}
-                          placeholder="例如: 0.0.0.0/0 或 10.0.0.0/24"
+                          placeholder="例如: 0.0.0.0/0, ::/0 或 10.0.0.0/24, fd00::/64"
                         />
                         <button
                           onClick={() => {
@@ -1483,12 +1623,12 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                           }}
                           className="btn-inline"
                           type="button"
-                          title="根据本地 IP 地址和所有设备局域网 IP 自动生成 AllowedIPs"
+                          title="根据本地 IP 地址和所有设备局域网 IP 自动生成 AllowedIPs（支持双栈）"
                         >
                           自动生成
                         </button>
                       </div>
-                      <small>设置客户端可以通过 VPN 访问的网络范围，0.0.0.0/0 表示全流量代理</small>
+                      <small>设置客户端可以通过 VPN 访问的网络范围，0.0.0.0/0, ::/0 表示全流量代理（双栈）</small>
                     </div>
 
                     {/* 设备本地IP信息显示 */}

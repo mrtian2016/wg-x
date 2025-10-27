@@ -974,26 +974,18 @@ async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), St
     use rtnetlink::{new_connection, IpVersion};
     use std::net::IpAddr;
 
+    // 支持逗号分隔的多个地址（IPv4 和 IPv6 双栈）
+    let addresses: Vec<&str> = address.split(',').map(|s| s.trim()).collect();
+
+    log::info!("配置接口 {} 的 IP 地址: {:?}", interface, addresses);
+
     // 在当前 async 上下文中执行，不创建新的 runtime
     let (connection, handle, _) =
         new_connection().map_err(|e| format!("创建 netlink 连接失败: {}", e))?;
 
     tokio::spawn(connection);
 
-    // 解析地址
-    let parts: Vec<&str> = address.split('/').collect();
-    if parts.len() != 2 {
-        return Err(format!("无效的地址格式: {}", address));
-    }
-
-    let ip: IpAddr = parts[0]
-        .parse()
-        .map_err(|e| format!("解析 IP 地址失败: {}", e))?;
-    let prefix_len: u8 = parts[1]
-        .parse()
-        .map_err(|e| format!("解析前缀长度失败: {}", e))?;
-
-    // 获取接口索引
+    // 获取接口索引（只需要获取一次）
     let mut links = handle
         .link()
         .get()
@@ -1007,23 +999,55 @@ async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), St
 
     let index = link.header.index;
 
-    // 添加 IP 地址
-    match ip {
-        IpAddr::V4(addr) => {
-            handle
-                .address()
-                .add(index, addr.into(), prefix_len)
-                .execute()
-                .await
-                .map_err(|e| format!("添加 IPv4 地址失败: {}", e))?;
+    // 配置每个 IP 地址
+    for addr_str in addresses {
+        if addr_str.is_empty() {
+            continue;
         }
-        IpAddr::V6(addr) => {
-            handle
-                .address()
-                .add(index, addr.into(), prefix_len)
-                .execute()
-                .await
-                .map_err(|e| format!("添加 IPv6 地址失败: {}", e))?;
+
+        // 解析地址
+        let parts: Vec<&str> = addr_str.split('/').collect();
+        if parts.len() != 2 {
+            log::warn!("跳过无效的地址格式: {}", addr_str);
+            continue;
+        }
+
+        let ip: IpAddr = match parts[0].parse() {
+            Ok(ip) => ip,
+            Err(e) => {
+                log::warn!("跳过无效的 IP 地址 {}: {}", parts[0], e);
+                continue;
+            }
+        };
+
+        let prefix_len: u8 = match parts[1].parse() {
+            Ok(len) => len,
+            Err(e) => {
+                log::warn!("跳过无效的前缀长度 {}: {}", parts[1], e);
+                continue;
+            }
+        };
+
+        // 添加 IP 地址
+        match ip {
+            IpAddr::V4(addr) => {
+                log::info!("添加 IPv4 地址: {}/{}", addr, prefix_len);
+                handle
+                    .address()
+                    .add(index, addr.into(), prefix_len)
+                    .execute()
+                    .await
+                    .map_err(|e| format!("添加 IPv4 地址失败: {}", e))?;
+            }
+            IpAddr::V6(addr) => {
+                log::info!("添加 IPv6 地址: {}/{}", addr, prefix_len);
+                handle
+                    .address()
+                    .add(index, addr.into(), prefix_len)
+                    .execute()
+                    .await
+                    .map_err(|e| format!("添加 IPv6 地址失败: {}", e))?;
+            }
         }
     }
 
@@ -1036,7 +1060,7 @@ async fn configure_interface_ip(interface: &str, address: &str) -> Result<(), St
         .await
         .map_err(|e| format!("启动接口失败: {}", e))?;
 
-    log::info!("接口 {} 已配置地址 {} 并启动", interface, address);
+    log::info!("接口 {} 已配置所有地址并启动", interface);
     Ok(())
 }
 

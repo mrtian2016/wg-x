@@ -24,71 +24,99 @@ pub fn start_wireguard_macos(
     let escaped_wg_path = wireguard_path.replace('\'', "'\\''");
     let escaped_interface = interface_name.replace('\'', "'\\''");
 
-    // 解析 IP 地址，移除 CIDR 前缀（如果有）
-    // macOS ifconfig 不支持 CIDR 格式，只接受纯 IP 地址
-    let (ip_only, netmask) = if ip_address.contains('/') {
-        let parts: Vec<&str> = ip_address.split('/').collect();
-        let ip = parts[0];
-        let prefix_len = parts
-            .get(1)
-            .and_then(|s| s.parse::<u32>().ok())
-            .unwrap_or(24);
+    // 解析 IP 地址，支持 IPv4 和 IPv6，以及逗号分隔的多个地址
+    // macOS ifconfig 需要分别处理 IPv4 和 IPv6
+    let addresses: Vec<&str> = ip_address.split(',').map(|s| s.trim()).collect();
 
-        // 根据前缀长度生成子网掩码
-        let mask = if prefix_len == 32 {
-            "255.255.255.255".to_string()
-        } else if prefix_len == 24 {
-            "255.255.255.0".to_string()
-        } else if prefix_len == 16 {
-            "255.255.0.0".to_string()
-        } else if prefix_len == 8 {
-            "255.0.0.0".to_string()
-        } else {
-            // 通用计算
-            let mask_value = (!0u32) << (32 - prefix_len);
-            format!(
-                "{}.{}.{}.{}",
-                (mask_value >> 24) & 0xff,
-                (mask_value >> 16) & 0xff,
-                (mask_value >> 8) & 0xff,
-                mask_value & 0xff
-            )
-        };
-        (ip, mask)
-    } else {
-        (ip_address, "255.255.255.0".to_string())
-    };
-
-    let escaped_ip = ip_only.replace('\'', "'\\''");
-    let escaped_netmask = netmask.replace('\'', "'\\''");
-
-    log::info!("配置接口 {} 的 IP 地址: {} (netmask: {})", interface_name, ip_only, netmask);
+    log::info!("配置接口 {} 的 IP 地址: {:?}", interface_name, addresses);
 
     // 获取当前用户 ID，用于设置 socket 文件所有者
     let current_user = std::env::var("USER").unwrap_or_else(|_| "root".to_string());
     let escaped_user = current_user.replace('\'', "'\\''");
 
     // 构建完整的 shell 脚本
-    // macOS ifconfig 语法: ifconfig <interface> inet <local-ip> <dest-ip> netmask <mask>
-    // 对于 WireGuard 点对点接口，本地和目标地址都设为相同的 IP
-    // 这是 WireGuard 在 macOS 上的标准做法
-    // 修改 socket 文件所有者，让普通用户可以访问
-    // 在一次权限请求中完成接口配置和路由配置
+    // 启动 wireguard-go 并修改 socket 权限
     let mut shell_script = format!(
-        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 1 && /usr/sbin/chown '{}' /var/run/wireguard/{}.sock && /sbin/ifconfig '{}' inet '{}' '{}' netmask '{}' && /sbin/ifconfig '{}' up",
+        "'{}' -f '{}' > /tmp/wireguard-go.log 2>&1 & WG_PID=$! && sleep 1 && /usr/sbin/chown '{}' /var/run/wireguard/{}.sock",
         escaped_wg_path,
         escaped_interface,
         escaped_user,
-        escaped_interface,
-        escaped_interface,
-        escaped_ip,
-        escaped_ip,
-        escaped_netmask,
         escaped_interface
     );
+
+    // 配置每个 IP 地址（支持 IPv4 和 IPv6）
+    for addr in addresses {
+        if addr.is_empty() {
+            continue;
+        }
+
+        // 判断是 IPv4 还是 IPv6
+        if addr.contains(':') {
+            // IPv6 地址
+            let escaped_addr = addr.replace('\'', "'\\''");
+            log::info!("配置 IPv6 地址: {}", addr);
+
+            // macOS ifconfig inet6 语法: ifconfig <interface> inet6 <address>
+            shell_script.push_str(&format!(
+                " && /sbin/ifconfig '{}' inet6 '{}'",
+                escaped_interface, escaped_addr
+            ));
+        } else {
+            // IPv4 地址
+            // 解析 CIDR 前缀
+            let (ip_only, netmask) = if addr.contains('/') {
+                let parts: Vec<&str> = addr.split('/').collect();
+                let ip = parts[0];
+                let prefix_len = parts
+                    .get(1)
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(24);
+
+                // 根据前缀长度生成子网掩码
+                let mask = if prefix_len == 32 {
+                    "255.255.255.255".to_string()
+                } else if prefix_len == 24 {
+                    "255.255.255.0".to_string()
+                } else if prefix_len == 16 {
+                    "255.255.0.0".to_string()
+                } else if prefix_len == 8 {
+                    "255.0.0.0".to_string()
+                } else {
+                    // 通用计算
+                    let mask_value = (!0u32) << (32 - prefix_len);
+                    format!(
+                        "{}.{}.{}.{}",
+                        (mask_value >> 24) & 0xff,
+                        (mask_value >> 16) & 0xff,
+                        (mask_value >> 8) & 0xff,
+                        mask_value & 0xff
+                    )
+                };
+                (ip, mask)
+            } else {
+                (addr, "255.255.255.0".to_string())
+            };
+
+            let escaped_ip = ip_only.replace('\'', "'\\''");
+            let escaped_netmask = netmask.replace('\'', "'\\''");
+
+            log::info!("配置 IPv4 地址: {} (netmask: {})", ip_only, netmask);
+
+            // macOS ifconfig inet 语法: ifconfig <interface> inet <local-ip> <dest-ip> netmask <mask>
+            // 对于 WireGuard 点对点接口，本地和目标地址都设为相同的 IP
+            shell_script.push_str(&format!(
+                " && /sbin/ifconfig '{}' inet '{}' '{}' netmask '{}'",
+                escaped_interface, escaped_ip, escaped_ip, escaped_netmask
+            ));
+        }
+    }
+
+    // 启动接口
+    shell_script.push_str(&format!(" && /sbin/ifconfig '{}' up", escaped_interface));
+
     log::info!("shell 脚本: {}", shell_script);
 
-    // 添加路由配置
+    // 添加路由配置（支持 IPv4 和 IPv6）
     // 使用 || true 忽略路由已存在的错误,避免影响 PID 输出
     for route in routes {
         // 跳过全局路由
@@ -96,11 +124,23 @@ pub fn start_wireguard_macos(
             continue;
         }
         let escaped_route = route.replace('\'', "'\\''");
-        // 先尝试删除已存在的路由(忽略错误),然后添加新路由(忽略已存在错误)
-        shell_script.push_str(&format!(
-            " && (/sbin/route delete -inet {} > /dev/null 2>&1 || true) && (/sbin/route add -inet {} -interface '{}' > /dev/null 2>&1 || true)",
-            escaped_route, escaped_route, escaped_interface
-        ));
+
+        // 判断是 IPv4 还是 IPv6 路由
+        if route.contains(':') {
+            // IPv6 路由
+            log::info!("添加 IPv6 路由: {}", route);
+            shell_script.push_str(&format!(
+                " && (/sbin/route delete -inet6 {} > /dev/null 2>&1 || true) && (/sbin/route add -inet6 {} -interface '{}' > /dev/null 2>&1 || true)",
+                escaped_route, escaped_route, escaped_interface
+            ));
+        } else {
+            // IPv4 路由
+            log::info!("添加 IPv4 路由: {}", route);
+            shell_script.push_str(&format!(
+                " && (/sbin/route delete -inet {} > /dev/null 2>&1 || true) && (/sbin/route add -inet {} -interface '{}' > /dev/null 2>&1 || true)",
+                escaped_route, escaped_route, escaped_interface
+            ));
+        }
     }
 
     // 最后输出 PID
