@@ -202,3 +202,33 @@ pub fn get_all_local_ips() -> Result<Vec<String>, String> {
 
     Ok(ips)
 }
+
+#[command]
+pub async fn get_public_ip() -> Result<String, String> {
+    // 使用多个公网 IP 查询服务，提高成功率
+    let services = vec![
+        "https://myip.ipip.net",
+        "https://ddns.oray.com/checkip",
+        "https://ip.3322.net",
+        "https://4.ipw.cn",
+        "https://v4.yinghualuo.cn/bejson"
+    ];
+
+    for service in services {
+        match reqwest::get(service).await {
+            Ok(response) => {
+                if let Ok(ip) = response.text().await {
+                    let ip = ip.trim().to_string();
+                    log::info!("获取公网 IP: {}", ip);
+                    // 验证是否为有效的 IP 地址
+                    if !ip.is_empty() && ip.chars().all(|c| c.is_numeric() || c == '.') {
+                        return Ok(ip);
+                    }
+                }
+            }
+            Err(_) => continue,
+        }
+    }
+
+    Err("无法获取公网 IP，请检查网络连接".to_string())
+}

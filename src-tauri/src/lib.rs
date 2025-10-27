@@ -96,6 +96,7 @@ pub fn run() {
             commands::misc_commands::get_platform,
             commands::misc_commands::get_local_ip,
             commands::misc_commands::get_all_local_ips,
+            commands::misc_commands::get_public_ip,
             commands::key_management::generate_keypair,
             commands::key_management::generate_preshared_key,
             commands::key_management::private_key_to_public,

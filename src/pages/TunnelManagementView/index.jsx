@@ -554,6 +554,18 @@ function TunnelManagementView({ onShowToast }) {
     }
   };
 
+  // 获取公网 IP
+  const handleGetPublicIp = async () => {
+    try {
+      onShowToast('正在获取公网 IP...', 'info');
+      const publicIp = await invoke('get_public_ip');
+      setConfig({ ...config, serverEndpoint: publicIp });
+      onShowToast(`已获取公网 IP: ${publicIp}`, 'success');
+    } catch (error) {
+      onShowToast('获取公网 IP 失败: ' + error, 'error');
+    }
+  };
+
   // 添加 Peer
   const handleAddPeer = () => {
     setConfig({
@@ -1434,12 +1446,21 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                   <>
                     <div className="form-group">
                       <label>服务端地址 (公网 IP 或域名) *</label>
-                      <input
-                        type="text"
-                        value={config.serverEndpoint || ''}
-                        onChange={(e) => setConfig({ ...config, serverEndpoint: e.target.value })}
-                        placeholder="例如: vpn.example.com 或 123.45.67.89"
-                      />
+                      <div className="input-with-button">
+                        <input
+                          type="text"
+                          value={config.serverEndpoint || ''}
+                          onChange={(e) => setConfig({ ...config, serverEndpoint: e.target.value })}
+                          placeholder="例如: vpn.example.com 或 123.45.67.89"
+                        />
+                        <button
+                          type="button"
+                          className="btn-inline"
+                          onClick={handleGetPublicIp}
+                        >
+                          获取公网IP
+                        </button>
+                      </div>
                       <small>用于客户端连接，生成的客户端配置会自动带入此地址，请输入公网 IP 或域名</small>
                     </div>
                     <div className="form-group">
