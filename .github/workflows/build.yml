@@ -67,18 +67,12 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'WG-X ${{ github.ref_name }}'
+          releaseName: 'WireVault ${{ github.ref_name }}'
           releaseBody: |
             ## 下载说明
             - **Windows**: 下载 `.msi` 或 `.exe` 安装包
             - **macOS**: 下载 `.dmg` 文件(支持 Intel 和 Apple Silicon)
             - **Linux**: 下载 `.AppImage` 或 `.deb` 包
-
-            ## 自动更新
-            应用内置自动更新功能，启动时会自动检查新版本。
-
-            ## 更新日志
-            请在此添加本版本的更新内容...
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.platform.rust_target }}
