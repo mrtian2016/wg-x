@@ -9,7 +9,7 @@ use tauri::Manager;
 
 const SYSTEMD_SERVICE_CONTENT: &str = r#"[Unit]
 Description=WireVault 守护进程
-Documentation=https://github.com/pyer/wire-vault
+Documentation=https://github.com/mrtian2016/wire-vault
 After=network.target
 
 [Service]
@@ -124,25 +124,56 @@ pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
     log::info!("应用可执行文件: {}", current_exe_str);
 
     // 获取 wireguard-go sidecar 的路径
-    // 优先使用 Resource 目录（生产环境），失败则回退到开发环境路径
-    let sidecar_path = if let Ok(path) = app
-        .path()
-        .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
-    {
-        log::info!("从 Resource 目录找到 sidecar");
-        path
-    } else {
-        log::info!("未找到 Resource 目录中的 sidecar，回退到开发环境路径");
-        // 开发环境回退方案
-        std::env::current_exe()
+    // 尝试多个可能的位置
+    let sidecar_path = {
+        // 1. 尝试 Resource 目录
+        let resource_path = app
+            .path()
+            .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
+            .ok();
+
+        // 2. 尝试可执行文件同目录
+        let exe_dir_path = std::env::current_exe()
             .ok()
-            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-            .map(|p| p.join("wireguard-go"))
-            .ok_or_else(|| {
-                let msg = "无法获取 wireguard-go 路径".to_string();
-                log::error!("{}", msg);
-                msg
-            })?
+            .and_then(|exe| exe.parent().map(|p| p.join("wireguard-go")));
+
+        // 检查并记录每个路径
+        let found_resource = resource_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+        let found_exe_dir = exe_dir_path.as_ref().map(|p| p.exists()).unwrap_or(false);
+
+        if let Some(ref path) = resource_path {
+            if found_resource {
+                log::info!("✓ 从 Resource 目录找到 sidecar: {:?}", path);
+            } else {
+                log::warn!("Resource 目录路径不存在: {:?}", path);
+            }
+        }
+
+        if let Some(ref path) = exe_dir_path {
+            if found_exe_dir {
+                log::info!("✓ 从可执行文件目录找到 sidecar: {:?}", path);
+            } else {
+                log::warn!("可执行文件目录路径不存在: {:?}", path);
+            }
+        }
+
+        // 选择第一个存在的路径
+        if found_resource {
+            resource_path.unwrap()
+        } else if found_exe_dir {
+            exe_dir_path.unwrap()
+        } else {
+            let msg = "无法找到 wireguard-go 文件".to_string();
+            log::error!("{}", msg);
+            log::error!("尝试的路径:");
+            if let Some(p) = resource_path {
+                log::error!("  - {:?} (不存在)", p);
+            }
+            if let Some(p) = exe_dir_path {
+                log::error!("  - {:?} (不存在)", p);
+            }
+            return Err(msg);
+        }
     };
 
     let sidecar_path_str = sidecar_path
@@ -155,52 +186,64 @@ pub async fn install_daemon(app: tauri::AppHandle) -> Result<String, String> {
 
     log::info!("sidecar 路径: {}", sidecar_path_str);
 
-    // 检查文件是否存在和可读
-    // 在 AppImage 环境中，/tmp/.mount_* 路径可能无法访问
-    let actual_sidecar_str = if !sidecar_path.exists() {
-        log::warn!("sidecar 文件在预期路径不存在: {}", sidecar_path_str);
+    // 准备临时目录用于存放文件
+    let temp_dir = "/tmp/wire-vault-install-temp";
+    log::info!("创建临时目录: {}", temp_dir);
+    fs::create_dir_all(temp_dir).map_err(|e| {
+        let msg = format!("创建临时目录失败: {}", e);
+        log::error!("{}", msg);
+        msg
+    })?;
 
-        // 检查是否在 AppImage 环境中
-        if let Ok(appimage_path) = std::env::var("APPIMAGE") {
-            log::info!("检测到 AppImage 环境，原始文件: {}", appimage_path);
-            log::warn!("AppImage 中的文件可能无法在当前用户权限下访问");
-            log::info!("安装脚本将使用相对路径访问 wireguard-go");
-
-            // 在 AppImage 中，使用 /usr/lib/WireVault/wireguard-go
-            // 这是 AppImage 打包时的相对路径
-            sidecar_path_str
-        } else {
-            let msg = format!("sidecar 文件不存在: {}", sidecar_path_str);
+    // 复制 wireguard-go 到临时目录
+    let temp_sidecar = format!("{}/wireguard-go", temp_dir);
+    if sidecar_path.exists() {
+        log::info!("✓ sidecar 文件存在，复制到临时目录");
+        fs::copy(&sidecar_path, &temp_sidecar).map_err(|e| {
+            let msg = format!("复制 wireguard-go 到临时目录失败: {}", e);
             log::error!("{}", msg);
-            return Err(msg);
-        }
+            msg
+        })?;
+        log::info!("✓ wireguard-go 已复制到: {}", temp_sidecar);
+
+        // 设置可执行权限
+        fs::set_permissions(&temp_sidecar, fs::Permissions::from_mode(0o755))
+            .map_err(|e| {
+                let msg = format!("设置 wireguard-go 权限失败: {}", e);
+                log::error!("{}", msg);
+                msg
+            })?;
     } else {
-        log::info!("✓ sidecar 文件存在");
+        let msg = format!("sidecar 文件不存在: {}", sidecar_path_str);
+        log::error!("{}", msg);
+        // 清理临时目录
+        let _ = fs::remove_dir_all(temp_dir);
+        return Err(msg);
+    }
 
-        if !std::fs::metadata(&sidecar_path)
-            .map(|m| m.permissions().mode() & 0o111 != 0)
-            .unwrap_or(false)
-        {
-            log::warn!("sidecar 文件可能不可执行，权限: {:o}",
-                std::fs::metadata(&sidecar_path)
-                    .map(|m| m.permissions().mode())
-                    .unwrap_or(0));
-        } else {
-            log::info!("✓ sidecar 文件可执行");
-        }
+    // 复制应用可执行文件到临时目录
+    let temp_app = format!("{}/wire_vault", temp_dir);
+    log::info!("复制应用到临时目录: {}", temp_app);
+    fs::copy(&current_exe, &temp_app).map_err(|e| {
+        let msg = format!("复制应用到临时目录失败: {}", e);
+        log::error!("{}", msg);
+        // 清理临时目录
+        let _ = fs::remove_dir_all(temp_dir);
+        msg
+    })?;
+    log::info!("✓ 应用已复制到: {}", temp_app);
 
-        sidecar_path_str
-    };
+    // 设置可执行权限
+    fs::set_permissions(&temp_app, fs::Permissions::from_mode(0o755))
+        .map_err(|e| {
+            let msg = format!("设置应用权限失败: {}", e);
+            log::error!("{}", msg);
+            // 清理临时目录
+            let _ = fs::remove_dir_all(temp_dir);
+            msg
+        })?;
 
     // 创建临时安装脚本
-    // 检查是否在 AppImage 环境中
-    let is_appimage = std::env::var("APPIMAGE").is_ok();
-    let script_comment = if is_appimage {
-        "（从 AppImage 中提取）"
-    } else {
-        ""
-    };
-
     let script_content = format!(
         r#"#!/bin/bash
 set -e
@@ -215,97 +258,44 @@ log_error() {{
 }}
 
 log_info "========== WireVault 守护进程安装开始 =========="
-log_info "sidecar 路径: {} {}"
-log_info "应用路径: {}"
+log_info "临时目录: {}"
 
 # 1. 创建 /opt/wire-vault 目录并复制 wireguard-go
 log_info "[1/5] 创建目录并复制 wireguard-go..."
 mkdir -p /opt/wire-vault
 log_info "  ✓ 目录 /opt/wire-vault 已创建"
 
-# 详细检查源文件并处理 AppImage 环境
 SIDECAR_SOURCE="{}"
+log_info "  源文件: $SIDECAR_SOURCE"
 
-log_info "  检查源文件: $SIDECAR_SOURCE"
+if [ ! -r "$SIDECAR_SOURCE" ]; then
+    log_error "  ✗ 无法读取源文件: $SIDECAR_SOURCE"
+    exit 1
+fi
 
-# 检查文件是否直接可读
-if [ -r "$SIDECAR_SOURCE" ]; then
-    log_info "  ✓ sidecar 文件可读（直接路径）"
-    log_info "  开始复制 wireguard-go..."
-    if install -m 755 "$SIDECAR_SOURCE" /opt/wire-vault/wireguard-go; then
-        log_info "  ✓ wireguard-go 已复制到 /opt/wire-vault"
-        log_info "  文件权限: $(stat -c '%a' /opt/wire-vault/wireguard-go)"
-    else
-        log_error "  ✗ 直接复制失败"
-        exit 1
-    fi
-elif [ -n "$APPIMAGE" ] && [ -r "$APPIMAGE" ]; then
-    # AppImage 环境：从 AppImage 文件中提取
-    log_info "  检测到 AppImage 环境: $APPIMAGE"
-    log_info "  尝试从 AppImage 中提取 wireguard-go..."
-
-    # 使用 file roller 或直接使用 AppImage 挂载点的相对路径
-    # AppImage 通常会自动挂载到 /tmp/.mount_* 目录
-    APPIMAGE_MOUNT=$(find /tmp -maxdepth 1 -name '.mount_*' -type d 2>/dev/null | head -1)
-
-    if [ -n "$APPIMAGE_MOUNT" ] && [ -r "$APPIMAGE_MOUNT/usr/lib/WireVault/wireguard-go" ]; then
-        log_info "  ✓ 找到 AppImage 挂载点: $APPIMAGE_MOUNT"
-        if install -m 755 "$APPIMAGE_MOUNT/usr/lib/WireVault/wireguard-go" /opt/wire-vault/wireguard-go; then
-            log_info "  ✓ wireguard-go 已从 AppImage 复制到 /opt/wire-vault"
-            log_info "  文件权限: $(stat -c '%a' /opt/wire-vault/wireguard-go)"
-        else
-            log_error "  ✗ 从 AppImage 复制失败"
-            exit 1
-        fi
-    else
-        log_error "✗ 错误: 无法从 AppImage 中找到 wireguard-go"
-        log_error "  检查的位置: $APPIMAGE_MOUNT/usr/lib/WireVault/wireguard-go"
-        log_error "  AppImage: $APPIMAGE"
-        exit 1
-    fi
+if install -m 755 "$SIDECAR_SOURCE" /opt/wire-vault/wireguard-go; then
+    log_info "  ✓ wireguard-go 已复制到 /opt/wire-vault"
+    log_info "  文件权限: $(stat -c '%a' /opt/wire-vault/wireguard-go)"
 else
-    log_error "✗ 错误: 无法读取 sidecar 文件"
-    log_error "  直接路径: $SIDECAR_SOURCE (存在: $([ -e \"$SIDECAR_SOURCE\" ] && echo '是' || echo '否')，可读: $([ -r \"$SIDECAR_SOURCE\" ] && echo '是' || echo '否'))"
-    log_error "  AppImage: ${{APPIMAGE:-未检测到}}"
-    log_error "  请检查文件是否存在和权限是否正确"
+    log_error "  ✗ 复制 wireguard-go 失败"
     exit 1
 fi
 
 # 2. 复制主可执行文件
 log_info "[2/5] 复制可执行文件..."
 APP_SOURCE="{}"
+log_info "  源文件: $APP_SOURCE"
 
-log_info "  检查源文件: $APP_SOURCE"
+if [ ! -r "$APP_SOURCE" ]; then
+    log_error "  ✗ 无法读取源文件: $APP_SOURCE"
+    exit 1
+fi
 
-if [ -r "$APP_SOURCE" ]; then
-    log_info "  ✓ 应用文件可读"
-    if install -m 755 "$APP_SOURCE" /usr/local/bin/wire-vault; then
-        log_info "  ✓ 应用已复制到 /usr/local/bin/wire-vault"
-        log_info "  文件权限: $(stat -c '%a' /usr/local/bin/wire-vault)"
-    else
-        log_error "  ✗ 复制应用文件失败"
-        exit 1
-    fi
-elif [ -n "$APPIMAGE" ]; then
-    # AppImage 环境：从 AppImage 挂载点复制
-    log_info "  尝试从 AppImage 中提取应用..."
-    APPIMAGE_MOUNT=$(find /tmp -maxdepth 1 -name '.mount_*' -type d 2>/dev/null | head -1)
-
-    if [ -n "$APPIMAGE_MOUNT" ] && [ -r "$APPIMAGE_MOUNT/usr/bin/wire_vault" ]; then
-        if install -m 755 "$APPIMAGE_MOUNT/usr/bin/wire_vault" /usr/local/bin/wire-vault; then
-            log_info "  ✓ 应用已从 AppImage 复制到 /usr/local/bin/wire-vault"
-            log_info "  文件权限: $(stat -c '%a' /usr/local/bin/wire-vault)"
-        else
-            log_error "  ✗ 从 AppImage 复制应用失败"
-            exit 1
-        fi
-    else
-        log_error "✗ 错误: 无法从 AppImage 中找到应用"
-        log_error "  检查的位置: $APPIMAGE_MOUNT/usr/bin/wire_vault"
-        exit 1
-    fi
+if install -m 755 "$APP_SOURCE" /usr/local/bin/wire-vault; then
+    log_info "  ✓ 应用已复制到 /usr/local/bin/wire-vault"
+    log_info "  文件权限: $(stat -c '%a' /usr/local/bin/wire-vault)"
 else
-    log_error "✗ 错误: 无法读取应用文件: $APP_SOURCE"
+    log_error "  ✗ 复制应用文件失败"
     exit 1
 fi
 
@@ -365,7 +355,7 @@ else
     exit 1
 fi
 "#,
-        actual_sidecar_str, script_comment, current_exe_str, actual_sidecar_str, actual_sidecar_str, actual_sidecar_str, actual_sidecar_str, current_exe_str, SYSTEMD_SERVICE_CONTENT
+        temp_dir, temp_sidecar, temp_app, SYSTEMD_SERVICE_CONTENT
     );
 
     log::info!("安装脚本已生成，长度: {} 字节", script_content.len());
@@ -416,6 +406,13 @@ fi
         log::warn!("清理临时脚本失败: {}", e);
     } else {
         log::info!("临时脚本已清理");
+    }
+
+    // 清理临时目录
+    if let Err(e) = fs::remove_dir_all(temp_dir) {
+        log::warn!("清理临时目录失败: {}", e);
+    } else {
+        log::info!("临时目录已清理: {}", temp_dir);
     }
 
     if !output.status.success() {

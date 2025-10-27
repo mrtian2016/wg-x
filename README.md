@@ -112,7 +112,7 @@
 - **Linux**: 支持 glibc 的 Linux 发行版
 
 ### 下载安装
-从 [Releases](https://github.com/pyer/wire-vault/releases) 页面下载对应平台的安装文件：
+从 [Releases](https://github.com/mrtian2016/wire-vault/releases) 页面下载对应平台的安装文件：
 - macOS: `.dmg` 文件
 - Windows: `.msi` 或 `.exe` 文件（需先安装 WireGuard）
 - Linux: `.deb` 或其他发行版对应的安装包
@@ -150,7 +150,7 @@ sudo xattr -r -d com.apple.quarantine /path/to/WireVault.app
 
 ```bash
 # 克隆仓库
-git clone https://github.com/pyer/wire-vault.git
+git clone https://github.com/mrtian2016/wire-vault.git
 cd wire-vault
 
 # 安装依赖
