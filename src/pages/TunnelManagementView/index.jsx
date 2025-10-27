@@ -771,6 +771,13 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
   const generatePeerQrcode = useCallback(async (peerIndex, tunnel = null) => {
     try {
       const config = generateDetailPeerConfig(peerIndex, tunnel);
+
+      // 检查配置是否为有效的 WireGuard 配置格式
+      if (!config.includes('[Interface]') || !config.includes('[Peer]')) {
+        console.error('配置无效，缺少必要的配置内容:', config);
+        return null;
+      }
+
       // 后端已返回完整的 Data URL，直接使用
       const dataUrl = await invoke('generate_qrcode', { content: config });
       return dataUrl;
@@ -1380,12 +1387,25 @@ peer = (public-key = ${targetTunnel.public_key || ''}, allowed-ips = ${serverAll
                 <div className="form-row">
                   <div className="form-group">
                     <label>监听端口</label>
-                    <input
-                      type="number"
-                      value={config.listenPort}
-                      onChange={(e) => setConfig({ ...config, listenPort: e.target.value })}
-                      placeholder="留空自动分配"
-                    />
+                    <div className="input-with-button">
+                      <input
+                        type="number"
+                        value={config.listenPort}
+                        onChange={(e) => setConfig({ ...config, listenPort: e.target.value })}
+                        placeholder="请输入监听端口"
+                      />
+                      <button
+                        onClick={() => {
+                          const randomPort = Math.floor(Math.random() * (50000 - 40000 + 1)) + 40000;
+                          setConfig({ ...config, listenPort: randomPort.toString() });
+                        }}
+                        className="btn-inline"
+                        type="button"
+                        title="生成 40000-50000 范围内的随机端口"
+                      >
+                        随机生成
+                      </button>
+                    </div>
                   </div>
                   <div className="form-group">
                     <label>MTU</label>
