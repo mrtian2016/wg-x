@@ -579,18 +579,19 @@ pub async fn start_tunnel(tunnel_id: String, app: tauri::AppHandle) -> Result<()
         {
             // 在 Linux 上，优先使用 Resource 目录（生产环境）
             // 如果失败，则使用开发环境的 target 目录
-            app
+            if let Ok(path) = app
                 .path()
                 .resolve("wireguard-go", tauri::path::BaseDirectory::Resource)
-                .or_else(|_| {
-                    // 开发环境回退方案
-                    std::env::current_exe()
-                        .ok()
-                        .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
-                        .map(|p| p.join("wireguard-go"))
-                        .ok_or_else(|| tauri::Error::NotAllowed)
-                })
-                .map_err(|e| format!("获取 sidecar 路径失败: {}", e))?
+            {
+                path
+            } else {
+                // 开发环境回退方案
+                std::env::current_exe()
+                    .ok()
+                    .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+                    .map(|p| p.join("wireguard-go"))
+                    .ok_or_else(|| "无法获取 wireguard-go 路径".to_string())?
+            }
         }
     };
 
