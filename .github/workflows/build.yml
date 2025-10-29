@@ -72,7 +72,7 @@ jobs:
             ## 下载说明
             - **Windows**: 下载 `.msi` 或 `.exe` 安装包
             - **macOS**: 下载 `.dmg` 文件(支持 Intel 和 Apple Silicon)
-            - **Linux**: 下载 `.AppImage` 或 `.deb` 包
+            - **Linux**: 下载 `.AppImage` 或 `.deb` 包 或 `.rpm` 包
           releaseDraft: false
           prerelease: false
           args: --target ${{ matrix.platform.rust_target }}
